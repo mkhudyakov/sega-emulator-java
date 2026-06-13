@@ -1,0 +1,13 @@
+out/
+build/
+.gradle/
+*.class
+# ROMs are never committed — supply your own.
+*.md
+!README.md
+!CLAUDE.md
+!TUTORIAL.md
+*.bin
+*.gen
+*.smd
+.DS_Store
