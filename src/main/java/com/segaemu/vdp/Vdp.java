@@ -24,12 +24,15 @@ package com.segaemu.vdp;
  *       and VRAM copy.</li>
  * </ul>
  *
- * <p>Per-plane scrolling is honoured: plane A scrolls by VSRAM[0] and plane B by
- * VSRAM[1], and the register-11 horizontal scroll modes (whole screen / per cell
- * / per line) are supported.
+ * <p>Scrolling is honoured: horizontally per the register-11 modes (whole screen
+ * / per cell / per line), and vertically either whole-screen (plane A by VSRAM[0],
+ * plane B by VSRAM[1]) or <b>per 16px column</b> when register 11 bit 2 is set.
+ * The <b>window plane</b> (registers 17/18) replaces plane A in its screen region,
+ * and the <b>shadow/highlight</b> mode (register 12 bit 3) is approximated. The
+ * active display is 320px (H40) or 256px (H32) per register 12.
  *
- * <p><b>What is not yet modelled</b> (documented stubs for the roadmap): the
- * window plane, per-column vertical scroll, and the shadow/highlight mode.
+ * <p><b>What is not yet modelled</b> (documented stubs for the roadmap):
+ * interlace modes, and sub-line / exact-cycle HV-counter timing.
  */
 public final class Vdp {
 
@@ -367,24 +370,42 @@ public final class Vdp {
         return (reg[1] & 0x40) != 0;
     }
 
+    /** Active display width in pixels: 320 (H40) or 256 (H32), from register 12. */
+    public int activeWidth() {
+        return (reg[12] & 0x01) != 0 ? 320 : 256;
+    }
+
+    /** Shadow/highlight mode enable (register 12 bit 3). */
+    public boolean shadowHighlightEnabled() {
+        return (reg[12] & 0x08) != 0;
+    }
+
     // ======================================================================
     //  Renderer
     // ======================================================================
 
     private void renderScanline(int y) {
         int rowBase = y * SCREEN_W;
+        int backdrop = backdropColor();
         if (!displayEnabled()) {
-            java.util.Arrays.fill(framebuffer, rowBase, rowBase + SCREEN_W, backdropColor());
+            java.util.Arrays.fill(framebuffer, rowBase, rowBase + SCREEN_W, backdrop);
             return;
         }
-        // Build the three layers for this line, then composite by priority.
-        computePlaneRow(y, planeBBase(), 1, layerB, priB);
-        computePlaneRow(y, planeABase(), 0, layerA, priA);
+        int width = activeWidth();
+        // Build the layers for this line, then composite by priority. The window
+        // plane overwrites plane A inside the window region.
+        computePlaneRow(y, planeBBase(), 1, layerB, priB, width);
+        computePlaneRow(y, planeABase(), 0, layerA, priA, width);
+        applyWindowRow(y, width);
         computeSpriteRow(y);
 
-        int backdrop = backdropColor();
-        for (int x = 0; x < SCREEN_W; x++) {
-            framebuffer[rowBase + x] = resolvePixel(x, backdrop);
+        boolean sh = shadowHighlightEnabled();
+        for (int x = 0; x < width; x++) {
+            framebuffer[rowBase + x] = sh ? resolvePixelSH(x, backdrop) : resolvePixel(x, backdrop);
+        }
+        // In H32 the right-hand columns of the 320-wide buffer are unused.
+        if (width < SCREEN_W) {
+            java.util.Arrays.fill(framebuffer, rowBase + width, rowBase + SCREEN_W, backdrop);
         }
     }
 
@@ -406,24 +427,76 @@ public final class Vdp {
     }
 
     /**
+     * Per-pixel resolution with shadow/highlight (register 12 bit 3). Approximate
+     * model: with S/H on, the area is shadowed wherever the shown background is
+     * low priority (or it is the backdrop); high-priority planes and all normal
+     * sprites are at normal intensity. Two operator sprites — palette 3 colour 15
+     * (shadow) and colour 14 (highlight) — are themselves invisible and instead
+     * darken / brighten the background underneath them.
+     */
+    private int resolvePixelSH(int x, int backdrop) {
+        int s = layerS[x], a = layerA[x], b = layerB[x];
+        boolean so = (s & 0x0F) != 0, ao = (a & 0x0F) != 0, bo = (b & 0x0F) != 0;
+
+        int spal = s >> 4, scol = s & 0x0F;
+        boolean shadowOp = so && spal == 3 && scol == 15;
+        boolean highlightOp = so && spal == 3 && scol == 14;
+        boolean spriteVisible = so && !shadowOp && !highlightOp;
+
+        // Background (plane) winner and whether it is high priority.
+        int bgColor;
+        boolean bgHigh;
+        if (ao && priA[x]) { bgColor = cram[a]; bgHigh = true; }
+        else if (bo && priB[x]) { bgColor = cram[b]; bgHigh = true; }
+        else if (ao) { bgColor = cram[a]; bgHigh = false; }
+        else if (bo) { bgColor = cram[b]; bgHigh = false; }
+        else { bgColor = cram[reg[7] & 0x3F]; bgHigh = false; }
+
+        // Base intensity of the background area: shadowed unless a high-priority
+        // plane covers it; the operator sprites then modify it.
+        int intensity = bgHigh ? 0 : -1;
+        if (shadowOp) intensity = -1;
+        if (highlightOp) intensity = (intensity < 0) ? 0 : 1;
+
+        // Standard priority order (hi-S > hi-A > hi-B > lo-S > lo-A > lo-B), with
+        // visible sprites always rendered at normal intensity.
+        if (spriteVisible && (priS[x] || !bgHigh)) {
+            return applyIntensity(cram[s], 0);
+        }
+        return applyIntensity(bgColor, intensity);
+    }
+
+    /**
      * Build one scanline of a scroll plane into {@code layer} (CRAM index, low
      * nibble 0 = transparent) and {@code pri} (the per-tile priority bit).
      * Horizontal scroll honours the register-11 mode (full screen / per cell /
      * per line); vertical scroll is whole-screen from VSRAM[planeIndex].
      */
-    private void computePlaneRow(int y, int nametableBase, int planeIndex, int[] layer, boolean[] pri) {
+    private void computePlaneRow(int y, int nametableBase, int planeIndex, int[] layer, boolean[] pri, int width) {
         int planeW = planeWidthTiles();
         int planeH = planeHeightTiles();
+        int planeWMask = planeW * 8 - 1;
+        int planeHMask = planeH * 8 - 1;
 
-        int hscroll = planeHScroll(y, planeIndex) & ((planeW * 8) - 1);
-        int vscroll = vsram[planeIndex] & ((planeH * 8) - 1);
+        int hscroll = planeHScroll(y, planeIndex) & planeWMask;
+        boolean perColumn = (reg[11] & 0x04) != 0;
+        int wholeVscroll = vsram[planeIndex] & 0x7FF;
 
-        int worldY = (y + vscroll) & ((planeH * 8) - 1);
-        int tileRow = worldY >> 3;
-        int fineY = worldY & 7;
+        for (int x = 0; x < width; x++) {
+            // Vertical scroll: whole-screen, or per 16px column (VSRAM holds an A
+            // word then a B word for each column when register 11 bit 2 is set).
+            int vscroll;
+            if (perColumn) {
+                int idx = (x >> 4) * 2 + planeIndex;
+                vscroll = (idx < vsram.length ? vsram[idx] : 0) & 0x7FF;
+            } else {
+                vscroll = wholeVscroll;
+            }
+            int worldY = (y + vscroll) & planeHMask;
+            int tileRow = worldY >> 3;
+            int fineY = worldY & 7;
 
-        for (int x = 0; x < SCREEN_W; x++) {
-            int worldX = (x - hscroll) & ((planeW * 8) - 1);
+            int worldX = (x - hscroll) & planeWMask;
             int tileCol = worldX >> 3;
             int fineX = worldX & 7;
 
@@ -450,6 +523,59 @@ public final class Vdp {
     }
 
     /**
+     * Overlay the window plane onto plane A for scanline {@code y}. The window
+     * (registers 17/18) replaces plane A in a screen-aligned region: a horizontal
+     * band of whole lines (the vertical window) plus, on the remaining lines, a
+     * vertical band of columns (the horizontal window). The window plane does not
+     * scroll — it is indexed directly by screen position from its own nametable
+     * (register 3), whose row stride is 64 tiles in H40, 32 in H32.
+     */
+    private void applyWindowRow(int y, int width) {
+        boolean down = (reg[18] & 0x80) != 0;
+        int wvp = (reg[18] & 0x1F) * 8;
+        boolean lineInWindow = down ? (y >= wvp) : (y < wvp);
+
+        boolean right = (reg[17] & 0x80) != 0;
+        int whp = (reg[17] & 0x1F) * 16;
+
+        // Fast out when this line has no window pixels at all.
+        if (!lineInWindow) {
+            if (right && whp >= width) return;   // band starts past the screen
+            if (!right && whp == 0) return;       // empty left band
+        }
+
+        int wTilesW = width == 320 ? 64 : 32;
+        int winBase = width == 320 ? (reg[3] & 0x3E) << 9 : (reg[3] & 0x3F) << 9;
+        int tileRow = y >> 3;
+        int fineY = y & 7;
+
+        for (int x = 0; x < width; x++) {
+            boolean inWin = lineInWindow || (right ? (x >= whp) : (x < whp));
+            if (!inWin) {
+                continue;
+            }
+            int tileCol = x >> 3;
+            int entryAddr = winBase + ((tileRow * wTilesW + tileCol) * 2);
+            int entry = readVramWord(entryAddr);
+
+            int tileIndex = entry & 0x07FF;
+            boolean hflip = (entry & 0x0800) != 0;
+            boolean vflip = (entry & 0x1000) != 0;
+            int palette = (entry >> 13) & 0x3;
+            boolean priority = (entry & 0x8000) != 0;
+
+            int px = hflip ? 7 - (x & 7) : (x & 7);
+            int py = vflip ? 7 - fineY : fineY;
+            int patternAddr = tileIndex * 32 + py * 4 + (px >> 1);
+            int b = vram[patternAddr & 0xFFFF] & 0xFF;
+            int colorIndex = (px & 1) == 0 ? (b >> 4) : (b & 0x0F);
+
+            layerA[x] = colorIndex == 0 ? 0 : palette * 16 + colorIndex;
+            priA[x] = priority;
+        }
+    }
+
+    /**
      * Build the sprite layer for one scanline by walking the sprite attribute
      * table as a linked list. Honours size (1-4 cells each axis), H/V flip,
      * priority, palette, the column-major tile layout, the per-line pixel limit
@@ -459,8 +585,9 @@ public final class Vdp {
     private void computeSpriteRow(int line) {
         java.util.Arrays.fill(layerS, 0);
         int satBase = (reg[5] & 0x7F) << 9;
-        final int maxSprites = 80;       // H40
-        int pixelBudget = SCREEN_W;      // H40 per-line sprite pixel limit (320)
+        int screenWidth = activeWidth();
+        final int maxSprites = screenWidth == 320 ? 80 : 64;
+        int pixelBudget = screenWidth;   // per-line sprite pixel limit (320 / 256)
         int sprite = 0;
         boolean drewOnLine = false;
 
@@ -503,7 +630,7 @@ public final class Vdp {
                     }
                     pixelBudget--;
                     int screenX = sx + sxRel;
-                    if (screenX < 0 || screenX >= SCREEN_W) {
+                    if (screenX < 0 || screenX >= screenWidth) {
                         continue;
                     }
                     int px = hflip ? (width - 1 - sxRel) : sxRel;
@@ -542,14 +669,33 @@ public final class Vdp {
         return toRgb(cram[idx]);
     }
 
+    /** 3-bit colour component → 8-bit level at normal intensity. */
+    private static final int[] LEVELS = {0, 36, 73, 109, 146, 182, 219, 255};
+
     /** Convert a 9-bit Mega Drive BGR colour (0000 BBB0 GGG0 RRR0) to ARGB. */
     private static int toRgb(int c) {
+        return applyIntensity(c, 0);
+    }
+
+    /**
+     * Convert a 9-bit BGR colour to ARGB, applying a shadow/highlight intensity:
+     * {@code <0} shadow (half brightness), {@code 0} normal, {@code >0} highlight
+     * (brighter). The shadow/highlight curves are approximate — half of the level
+     * range either side of normal.
+     */
+    private static int applyIntensity(int c, int intensity) {
         int r = (c >> 1) & 0x7;
         int g = (c >> 5) & 0x7;
         int b = (c >> 9) & 0x7;
-        // Expand 3 bits to 8 by replicating the level table.
-        int[] lv = {0, 36, 73, 109, 146, 182, 219, 255};
-        return 0xFF000000 | (lv[r] << 16) | (lv[g] << 8) | lv[b];
+        int rr, gg, bb;
+        if (intensity < 0) {
+            rr = LEVELS[r] >> 1; gg = LEVELS[g] >> 1; bb = LEVELS[b] >> 1;
+        } else if (intensity > 0) {
+            rr = 128 + (LEVELS[r] >> 1); gg = 128 + (LEVELS[g] >> 1); bb = 128 + (LEVELS[b] >> 1);
+        } else {
+            rr = LEVELS[r]; gg = LEVELS[g]; bb = LEVELS[b];
+        }
+        return 0xFF000000 | (rr << 16) | (gg << 8) | bb;
     }
 
     // --- register-derived geometry ----------------------------------------

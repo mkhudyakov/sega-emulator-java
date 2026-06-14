@@ -11,3 +11,4 @@ build/
 *.gen
 *.smd
 .DS_Store
+.idea/

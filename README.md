@@ -40,8 +40,9 @@ features listed below. Here is exactly what works and what does not:
   RAM, Z80 area, I/O, VDP ports).
 - **VDP** — control/data port protocol, all 24 registers, VRAM/CRAM/VSRAM, the
   status register and HV counter, the vertical **and horizontal** interrupts,
-  DMA (68000→VRAM/CRAM/VSRAM, VRAM fill, VRAM copy), per-plane scroll
-  (per-line/per-cell H-scroll),
+  DMA (68000→VRAM/CRAM/VSRAM, VRAM fill, VRAM copy), scrolling
+  (per-line/per-cell H-scroll, whole-screen **or per-column V-scroll**),
+  the **window plane**, **shadow/highlight** mode, **H40/H32** width switching,
   and a **layered renderer**: scroll planes A and B plus the **sprite layer**
   (linked-list traversal, 1–4 cell sizes, H/V flip, palettes, per-pixel priority
   resolution, sprite overflow/collision flags, basic X=0 masking).
@@ -57,12 +58,12 @@ features listed below. Here is exactly what works and what does not:
   YM2612 status).
 
 ### 🚧 Not yet implemented (the roadmap — see `PLAN.md`)
-- **Window plane** and shadow/highlight mode in the VDP.
 - **The Z80 core** (stubbed: only the bus-request/reset handshake is modelled).
 - **Sound**: the YM2612 FM chip and SN76489 PSG accept register writes but
   produce silence.
-- **Sub-line timing** (the H-interrupt itself is implemented; the HV counter's
-  horizontal position and exact HBLANK timing are still per-scanline).
+- **VDP interlace** modes and **sub-line timing** (the H-interrupt itself is
+  implemented; the HV counter's horizontal position and exact HBLANK timing are
+  still per-scanline). Shadow/highlight is an approximation.
 - **Save RAM (SRAM)** and bank-switching mappers; the 6-button pad; PAL/50 Hz.
 
 In short: it **boots commercial ROMs and renders their title screens with

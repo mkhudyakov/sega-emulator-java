@@ -76,8 +76,11 @@ counter raises the level-4 horizontal interrupt across the active display.
 `GenesisSystem` delivers V-int then H-int and keeps each pending until the CPU
 accepts it (`M68000.interrupt` returns acceptance). Colours are 9-bit
 BGR in CRAM, expanded to ARGB via a 3-bit→8-bit level table. DMA (68k→VDP, fill,
-copy) is driven from `GenesisBus.runPendingDma()`. **The window plane,
-per-column vscroll and shadow/highlight are not yet implemented.**
+copy) is driven from `GenesisBus.runPendingDma()`. The **window plane**
+(registers 17/18, overlaying plane A), **per-column vscroll** (register 11 bit 2),
+**shadow/highlight** (register 12 bit 3, approximate), and **H40/H32** width
+(register 12 → `activeWidth()` 320/256) are implemented. **Interlace and
+sub-line HV timing are not yet implemented.**
 
 **Debug harness** (`debug/Debugger.java`): headless run-frames / PC-breakpoint /
 RAM-peek / screenshot tool used to diagnose boot bugs; also exposed via
