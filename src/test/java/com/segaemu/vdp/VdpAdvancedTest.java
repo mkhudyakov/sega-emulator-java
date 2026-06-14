@@ -102,6 +102,30 @@ class VdpAdvancedTest {
         assertEquals(0xFFFFFFFF, vdp.framebuffer()[0], "high-priority pixel is normal");
     }
 
+    @Test
+    void planeScrollsInCorrectDirection() {
+        // Regression: the H-scroll value is the VDP shift amount, so screen column
+        // X shows plane column (X - hscroll). A double-negation once scrolled the
+        // planes backwards (Sonic's background drifted the wrong way).
+        vdp.writeControl(0x8200);          // plane A base 0
+        vdp.writeControl(0x8401);          // plane B base $2000 (kept clear)
+        vdp.writeControl(0x8B00);          // full-screen H-scroll
+        vdp.writeControl(0x8D20);          // H-scroll table base $8000
+
+        byte[] v = vdp.vram();
+        v[0] = 0x00; v[1] = 0x01;          // plane A cell (0,0) -> tile 1 (opaque)
+        for (int i = 0; i < 32; i++) v[32 + i] = 0x22; // tile 1 -> colour index 2
+        writeCram(2, 0x0EEE);              // white
+        v[0x8000] = 0x00; v[0x8001] = 0x10; // plane A H-scroll = 16
+
+        renderFrame();
+        int[] fb = vdp.framebuffer();
+        int white = toArgb(0x0EEE);
+        // hscroll 16 shifts the plane right: plane column 0 appears at screen x=16.
+        assertEquals(white, fb[16], "plane shifts right by the hscroll amount");
+        assertNotEquals(white, fb[0], "screen x=0 shows a scrolled-away column");
+    }
+
     // --- helpers -----------------------------------------------------------
 
     private static void setEntry(byte[] v, int base, int tileRow, int tileCol, int hi, int tile) {

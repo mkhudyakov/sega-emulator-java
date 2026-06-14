@@ -879,7 +879,9 @@ public final class M68000 {
     // ======================================================================
 
     private void groupCmpEor(int op) {
-        if ((op & 0xF138) == 0xB108) { cmpm(op); return; } // CMPM (Ay)+,(Ax)+
+        // CMPM (Ay)+,(Ax)+. Exclude opmode 11 (that is CMPA.l, which shares the
+        // top bits and a 001 in bits 5-3 when its source is an address register).
+        if ((op & 0xF138) == 0xB108 && ((op >> 6) & 3) != 3) { cmpm(op); return; }
         int opmode = (op >> 6) & 7;
         int dreg = (op >> 9) & 7;
         int mode = (op >> 3) & 7;
@@ -985,7 +987,7 @@ public final class M68000 {
 
     private void groupShift(int op) {
         if (((op >> 6) & 3) == 3) { // memory shift by 1
-            int type = (op >> 9) & 7;
+            int type = (op >> 9) & 3;
             boolean left = (op & 0x0100) != 0;
             Ea ea = decode((op >> 3) & 7, op & 7, WORD);
             int v = ea.read();
@@ -1061,9 +1063,13 @@ public final class M68000 {
         }
         if (count > 0) {
             flagC = lastC;
-            if (type != 2) flagX = lastC;
+            // Only the arithmetic/logical shifts update X. ROL/ROR (type 3) leave
+            // X untouched; ROXL/ROXR (type 2) already updated it in the loop.
+            if (type == 0 || type == 1) flagX = lastC;
         } else {
-            flagC = false;
+            // A zero shift count clears C, except ROXL/ROXR which copy X into C.
+            // X is never changed by a zero-count shift.
+            flagC = type == 2 ? flagX : false;
         }
         flagN = (v & (1 << (bits - 1))) != 0;
         flagZ = v == 0;
@@ -1309,13 +1315,22 @@ public final class M68000 {
         setSubFlags(a, b, r, size);
     }
 
+    private static long maskLong(int size) {
+        return switch (size) {
+            case BYTE -> 0xFFL;
+            case WORD -> 0xFFFFL;
+            default -> 0xFFFFFFFFL;
+        };
+    }
+
     private void setAddFlags(int a, int b, int r, int size) {
         int m = signBit(size);
         flagN = (r & m) != 0;
         flagZ = (r & mask(size)) == 0;
         boolean sa = (a & m) != 0, sb = (b & m) != 0, sr = (r & m) != 0;
         flagV = (sa == sb) && (sr != sa);
-        flagC = ((a & mask(size)) + (b & mask(size))) > mask(size);
+        // Unsigned carry: a 32-bit sum needs long arithmetic, not signed int.
+        flagC = ((a & maskLong(size)) + (b & maskLong(size))) > maskLong(size);
     }
 
     private void setSubFlags(int a, int b, int r, int size) {
@@ -1324,7 +1339,7 @@ public final class M68000 {
         flagZ = (r & mask(size)) == 0;
         boolean sa = (a & m) != 0, sb = (b & m) != 0, sr = (r & m) != 0;
         flagV = (sa != sb) && (sr != sa);
-        flagC = (a & mask(size)) < (b & mask(size));
+        flagC = (a & maskLong(size)) < (b & maskLong(size));
     }
 
     private void setLogicFlags(int r, int size) {
@@ -1499,6 +1514,25 @@ public final class M68000 {
     public void pokeD(int i, int v) { d[i] = v; }
     public void pokeA(int i, int v) { a[i] = v; }
     public void setPc(int v) { pc = v & 0xFFFFFF; }
+
+    /** Load full architectural state (for the SingleStepTests vector harness). */
+    public void loadTestState(int[] dr, int[] ar, int usp, int ssp, int sr, int pc) {
+        System.arraycopy(dr, 0, d, 0, 8);
+        System.arraycopy(ar, 0, a, 0, 7);
+        unpackCcr(sr & 0xFF);
+        interruptMask = (sr >> 8) & 7;
+        supervisor = (sr & 0x2000) != 0;
+        this.usp = usp;
+        this.ssp = ssp;
+        a[7] = supervisor ? ssp : usp;
+        this.pc = pc & 0xFFFFFF;
+        stopped = false;
+    }
+
+    /** User stack pointer (active or inactive). */
+    public int getUsp() { return supervisor ? usp : a[7]; }
+    /** Supervisor stack pointer (active or inactive). */
+    public int getSsp() { return supervisor ? a[7] : ssp; }
     public void setSrFlags(boolean x, boolean n, boolean z, boolean v, boolean c) {
         flagX = x; flagN = n; flagZ = z; flagV = v; flagC = c;
     }
