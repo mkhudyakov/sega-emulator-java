@@ -30,7 +30,7 @@ public final class AudioMixer {
     private SourceDataLine line;
     private boolean available;
 
-    private final double fps;
+    private double fps;
     private double sampleAccum;
 
     // Reusable per-frame buffers.
@@ -62,6 +62,11 @@ public final class AudioMixer {
 
     public boolean isAvailable() {
         return available;
+    }
+
+    /** Set the frame rate used to size each frame's audio (NTSC 59.92 / PAL 49.7). */
+    public void setFps(double fps) {
+        this.fps = fps;
     }
 
     /** Number of samples for the next frame, keeping the long-run rate exact. */

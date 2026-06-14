@@ -44,6 +44,16 @@ public final class GenesisBus implements Bus68000, Z80Bus {
     /** 9-bit bank register selecting the Z80's $8000–$FFFF 68000 window. */
     private int z80Bank = 0;
 
+    // Battery-backed save RAM (null when the cartridge has none).
+    private final byte[] sram;
+    private final int sramStart;
+    private final int sramEnd;
+    private boolean sramEnabled;
+    private boolean sramWriteProtect;
+
+    // SSF2 / SEGA mapper: eight 512 KB ROM banks over $000000–$3FFFFF.
+    private final int[] romBank = {0, 1, 2, 3, 4, 5, 6, 7};
+
     public GenesisBus(Rom rom, Vdp vdp, Controller pad1, Controller pad2,
                       Ym2612 ym2612, Sn76489 psg) {
         this.rom = rom;
@@ -52,6 +62,28 @@ public final class GenesisBus implements Bus68000, Z80Bus {
         this.pad2 = pad2;
         this.ym2612 = ym2612;
         this.psg = psg;
+
+        var hdr = rom.header();
+        if (hdr.hasSram()) {
+            this.sramStart = hdr.sramStart() & 0xFFFFFF;
+            this.sramEnd = hdr.sramEnd() & 0xFFFFFF;
+            int size = Math.min(sramEnd - sramStart + 1, 0x40000); // cap at 256 KB
+            this.sram = new byte[Math.max(size, 1)];
+            this.sramEnabled = true; // accessible by default; $A130F1 can gate it
+        } else {
+            this.sram = null;
+            this.sramStart = 0;
+            this.sramEnd = -1;
+        }
+    }
+
+    private boolean inSram(int addr) {
+        return sram != null && sramEnabled && addr >= sramStart && addr <= sramEnd;
+    }
+
+    private int mapRom(int addr) {
+        int window = (addr >> 19) & 7;        // 512 KB windows
+        return (romBank[window] << 19) | (addr & 0x7FFFF);
     }
 
     // ---- byte access (the routing happens here) ---------------------------
@@ -60,7 +92,10 @@ public final class GenesisBus implements Bus68000, Z80Bus {
     public int read8(int addr) {
         addr &= 0xFFFFFF;
         if (addr < 0x400000) {
-            return rom.read8(addr);
+            if (inSram(addr)) {
+                return sram[addr - sramStart] & 0xFF;
+            }
+            return rom.read8(mapRom(addr));
         }
         if (addr >= 0xA04000 && addr <= 0xA04003) {
             // YM2612 ports. Reading returns the status byte; our stub is never
@@ -92,6 +127,17 @@ public final class GenesisBus implements Bus68000, Z80Bus {
         value &= 0xFF;
         if (addr >= 0xFF0000) {
             workRam[addr & 0xFFFF] = (byte) value;
+            return;
+        }
+        if (addr < 0x400000) {
+            if (sram != null && sramEnabled && !sramWriteProtect
+                    && addr >= sramStart && addr <= sramEnd) {
+                sram[addr - sramStart] = (byte) value;
+            }
+            return; // ROM is otherwise read-only
+        }
+        if (addr >= 0xA13000 && addr <= 0xA130FF) {
+            writeMapperRegister(addr, value);
             return;
         }
         if (addr >= 0xA04000 && addr <= 0xA04003) {
@@ -236,12 +282,22 @@ public final class GenesisBus implements Bus68000, Z80Bus {
     private int ioRead(int addr) {
         return switch (addr & 0x1F) {
             // $A10000/01 — version register. Bit 7: 0 = domestic (JP), 1 = export.
-            // Bit 6: 0 = NTSC, 1 = PAL. Low nibble: hardware version.
-            case 0x00, 0x01 -> 0xA0; // export, NTSC, version 0
+            // Bit 6: 0 = NTSC, 1 = PAL. Bit 5: 1 = no expansion. Low nibble: version.
+            case 0x00, 0x01 -> versionRegister();
             case 0x02, 0x03 -> pad1.readData();
             case 0x04, 0x05 -> pad2.readData();
             default -> 0x00;
         };
+    }
+
+    private int versionRegister() {
+        var hdr = rom.header();
+        String region = hdr.region().toUpperCase();
+        boolean overseas = !(region.contains("J") && !region.contains("U") && !region.contains("E"));
+        int v = 0x20; // expansion-unit bit
+        if (overseas) v |= 0x80;
+        if (hdr.isPal()) v |= 0x40;
+        return v;
     }
 
     private void ioWrite(int addr, int value) {
@@ -304,8 +360,42 @@ public final class GenesisBus implements Bus68000, Z80Bus {
         return z80BusRequested;
     }
 
+    /**
+     * The SEGA/SSF2 mapper registers at $A130F1–$A130FF. $A130F1 is the SRAM
+     * control latch (bit0 = SRAM enabled, bit1 = write protect); the odd registers
+     * $A130F3..$A130FF each select the 512 KB ROM bank shown in windows 1..7.
+     */
+    private void writeMapperRegister(int addr, int value) {
+        int off = addr & 0xFF;
+        if (off == 0xF1) {
+            sramEnabled = (value & 0x01) != 0;
+            sramWriteProtect = (value & 0x02) != 0;
+        } else if (off >= 0xF3 && off <= 0xFF && (off & 1) == 1) {
+            int window = (off - 0xF1) >> 1; // F3→1 … FF→7
+            romBank[window & 7] = value & 0x3F;
+        }
+    }
+
     /** Read a work-RAM byte directly, bypassing region decoding (for debugging). */
     public int peekWorkRam(int addr) {
         return workRam[addr & 0xFFFF] & 0xFF;
+    }
+
+    // ---- battery SRAM persistence ----------------------------------------
+
+    public boolean hasSram() {
+        return sram != null;
+    }
+
+    /** A copy of the current SRAM contents (for writing a .srm file). */
+    public byte[] sramSnapshot() {
+        return sram == null ? new byte[0] : sram.clone();
+    }
+
+    /** Load previously-saved SRAM contents (from a .srm file). */
+    public void loadSram(byte[] data) {
+        if (sram != null && data != null) {
+            System.arraycopy(data, 0, sram, 0, Math.min(data.length, sram.length));
+        }
     }
 }

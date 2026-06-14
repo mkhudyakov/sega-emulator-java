@@ -32,10 +32,25 @@ public record RomHeader(
         String ioSupport,
         int romStart,
         int romEnd,
-        String region) {
+        String region,
+        boolean hasSram,
+        int sramStart,
+        int sramEnd) {
+
+    /** Default SRAM window when a game uses save RAM without a header entry. */
+    public static final int DEFAULT_SRAM_START = 0x200000;
+    public static final int DEFAULT_SRAM_END = 0x20FFFF;
 
     public static RomHeader parse(byte[] data) {
         int h = Rom.HEADER_OFFSET;
+        // SRAM info at $1B0: the ASCII "RA" signature, then start/end addresses.
+        boolean sram = (data.length > h + 0xB3)
+                && (data[h + 0xB0] & 0xFF) == 'R' && (data[h + 0xB1] & 0xFF) == 'A';
+        int sStart = sram ? (dword(data, h + 0xB4) & 0xFFFFFF) : DEFAULT_SRAM_START;
+        int sEnd = sram ? (dword(data, h + 0xB8) & 0xFFFFFF) : DEFAULT_SRAM_END;
+        if (sram && sEnd < sStart) {
+            sEnd = sStart;
+        }
         return new RomHeader(
                 ascii(data, h + 0x000, 16),
                 ascii(data, h + 0x010, 16),
@@ -46,7 +61,14 @@ public record RomHeader(
                 ascii(data, h + 0x090, 16),
                 dword(data, h + 0x0A0),
                 dword(data, h + 0x0A4),
-                ascii(data, h + 0x0F0, 16));
+                ascii(data, h + 0x0F0, 16),
+                sram, sStart, sEnd);
+    }
+
+    /** True for a PAL/Europe-only ROM (no NTSC region marker). */
+    public boolean isPal() {
+        String r = region.toUpperCase();
+        return r.contains("E") && !r.contains("U") && !r.contains("J");
     }
 
     /** True when the console-name field carries the expected SEGA signature. */

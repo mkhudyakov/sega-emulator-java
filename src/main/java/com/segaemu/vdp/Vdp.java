@@ -54,6 +54,7 @@ public final class Vdp {
 
     // --- timing / status ---------------------------------------------------
     private int scanline = 0;
+    private boolean pal = false;          // false = NTSC (262 lines), true = PAL (313)
     private boolean vblank = false;
     private boolean frameComplete = false;
     private boolean vIntPending = false;
@@ -160,6 +161,9 @@ public final class Vdp {
      */
     public int readStatus() {
         int s = 0x3400; // FIFO empty + always-set bits seen on hardware
+        if (pal) {
+            s |= 0x01;  // bit 0 reports PAL
+        }
         if (vblank) {
             s |= 0x08;
         }
@@ -329,12 +333,25 @@ public final class Vdp {
                 vIntPending = true;
             }
         }
-        if (scanline >= 262) { // NTSC total scanlines
+        if (scanline >= totalScanlines()) {
             scanline = 0;
             vblank = false;
             frameComplete = true;
         }
         return frameComplete;
+    }
+
+    /** Total scanlines per frame: 262 (NTSC) or 313 (PAL). */
+    public int totalScanlines() {
+        return pal ? 313 : 262;
+    }
+
+    public void setPal(boolean pal) {
+        this.pal = pal;
+    }
+
+    public boolean isPal() {
+        return pal;
     }
 
     public boolean isFrameComplete() {

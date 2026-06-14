@@ -8,7 +8,11 @@ import com.segaemu.sound.AudioMixer;
 import java.awt.BorderLayout;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -39,6 +43,7 @@ public final class EmulatorFrame extends JFrame {
     private final AudioMixer audio = new AudioMixer(GenesisSystem.FPS);
 
     private GenesisSystem genesis;
+    private Path romPath;
     private volatile boolean running = false;
     private volatile boolean romLoaded = false;
     private Thread emulationThread;
@@ -50,8 +55,53 @@ public final class EmulatorFrame extends JFrame {
         add(screen, BorderLayout.CENTER);
         setJMenuBar(buildMenuBar());
         installKeyHandling();
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                saveSram();
+            }
+        });
         pack();
         setLocationRelativeTo(null);
+    }
+
+    // ------------------------------------------------------------------
+    // Battery SRAM persistence (.srm next to the ROM)
+    // ------------------------------------------------------------------
+
+    private Path sramPath() {
+        if (romPath == null) {
+            return null;
+        }
+        String name = romPath.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        String base = dot > 0 ? name.substring(0, dot) : name;
+        return romPath.resolveSibling(base + ".srm");
+    }
+
+    private void loadSram() {
+        if (genesis == null || !genesis.bus().hasSram()) {
+            return;
+        }
+        Path p = sramPath();
+        if (p != null && Files.exists(p)) {
+            try {
+                genesis.bus().loadSram(Files.readAllBytes(p));
+            } catch (IOException ignored) {
+                // A missing/unreadable save just starts fresh.
+            }
+        }
+    }
+
+    private void saveSram() {
+        if (genesis == null || romPath == null || !genesis.bus().hasSram()) {
+            return;
+        }
+        try {
+            Files.write(sramPath(), genesis.bus().sramSnapshot());
+        } catch (IOException ignored) {
+            // Best-effort; failure to write a save should not crash the UI.
+        }
     }
 
     // ------------------------------------------------------------------
@@ -107,10 +157,14 @@ public final class EmulatorFrame extends JFrame {
     /** Load a ROM from disk, reporting any problem in a dialog. */
     public void loadRom(Path path) {
         stopEmulation();
+        saveSram(); // persist the previous cartridge's save before swapping
         try {
             Rom rom = Rom.load(path);
             genesis = new GenesisSystem(rom);
+            romPath = path;
             romLoaded = true;
+            audio.setFps(genesis.fps());
+            loadSram();
             setTitle("Sega Mega Drive Emulator — " + rom.header().displayTitle());
             startEmulation();
         } catch (InvalidRomException ex) {
@@ -236,6 +290,10 @@ public final class EmulatorFrame extends JFrame {
             case KeyEvent.VK_A -> Controller.Button.A;
             case KeyEvent.VK_S -> Controller.Button.B;
             case KeyEvent.VK_D -> Controller.Button.C;
+            case KeyEvent.VK_Q -> Controller.Button.X;
+            case KeyEvent.VK_W -> Controller.Button.Y;
+            case KeyEvent.VK_E -> Controller.Button.Z;
+            case KeyEvent.VK_SHIFT -> Controller.Button.MODE;
             case KeyEvent.VK_ENTER -> Controller.Button.START;
             default -> null;
         };
@@ -264,6 +322,8 @@ public final class EmulatorFrame extends JFrame {
                 A button      A
                 B button      S
                 C button      D
+                X / Y / Z     Q / W / E   (6-button games)
+                Mode          Shift       (6-button games)
                 Start         Enter
 
                 Load a ROM with File > Open ROM…

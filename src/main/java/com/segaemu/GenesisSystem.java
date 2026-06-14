@@ -66,6 +66,9 @@ public final class GenesisSystem {
     /** Tracks the Z80 reset line so its falling edge re-resets the Z80 core. */
     private boolean z80WasReset = true;
 
+    private final int scanlinesPerFrame;
+    private final double framesPerSecond;
+
     public GenesisSystem(Rom rom) {
         this.rom = rom;
         this.vdp = new Vdp();
@@ -77,7 +80,25 @@ public final class GenesisSystem {
         this.bus = new GenesisBus(rom, vdp, pad1, pad2, ym2612, psg);
         this.z80.attachBus(bus);
         this.cpu = new M68000(bus);
+
+        boolean pal = rom.header().isPal();
+        vdp.setPal(pal);
+        this.scanlinesPerFrame = pal ? 313 : SCANLINES;
+        this.framesPerSecond = pal ? 49.70 : FPS;
+        if (rom.header().supportsSixButton()) {
+            pad1.setSixButton(true);
+            pad2.setSixButton(true);
+        }
         reset();
+    }
+
+    /** Frames per second for this cartridge's video standard (NTSC or PAL). */
+    public double fps() {
+        return framesPerSecond;
+    }
+
+    public boolean isPal() {
+        return vdp.isPal();
     }
 
     public void reset() {
@@ -95,7 +116,9 @@ public final class GenesisSystem {
      */
     public void stepFrame() {
         breakRequested = false;
-        for (int line = 0; line < SCANLINES; line++) {
+        pad1.startFrame();
+        pad2.startFrame();
+        for (int line = 0; line < scanlinesPerFrame; line++) {
             long budget = 0;
             while (budget < CYCLES_PER_LINE) {
                 if (instructionHook != null) {

@@ -113,7 +113,20 @@ paced by **audio back-pressure**: `sound/AudioMixer.play` blocks on the
 sleep-based clock when no audio device is available.
 
 **Controller** (`io/Controller.java`): the 3-button pad multiplexes eight buttons
-onto six data lines using the TH select line (bit 6); buttons are active-low.
+onto six data lines using the TH select line (bit 6); buttons are active-low. The
+**6-button** mode (auto-enabled when the header advertises it) counts TH high→low
+transitions and, on the third cycle, returns the signature nibble then the
+X/Y/Z/Mode buttons; `startFrame()` resets the counter each frame (a stand-in for
+the hardware's 1.5 ms timeout).
+
+**Persistence & mappers** (`bus/GenesisBus.java`): **battery SRAM** is mapped per
+the header's `RA` entry (default $200000–$20FFFF), gated by the $A130F1 latch, and
+persisted by `ui/EmulatorFrame` to a `.srm` beside the ROM via
+`sramSnapshot`/`loadSram`. The **SSF2/SEGA mapper** ($A130F3–$A130FF) selects
+eight 512 KB ROM banks through `mapRom`. **Region/PAL** comes from
+`RomHeader.isPal()`: it sets the $A10001 version-register bits and switches the VDP
+(`totalScanlines` 262/313) and `GenesisSystem` (`fps()` 59.92/49.7, audio paced to
+match) to PAL timing.
 
 ## Key implementation details
 

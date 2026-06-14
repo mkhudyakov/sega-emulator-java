@@ -48,7 +48,14 @@ on the features listed below. Here is exactly what works and what does not:
   and a **layered renderer**: scroll planes A and B plus the **sprite layer**
   (linked-list traversal, 1–4 cell sizes, H/V flip, palettes, per-pixel priority
   resolution, sprite overflow/collision flags, basic X=0 masking).
-- **Controller** — the 3-button pad's TH-multiplexed read protocol.
+- **Controllers** — the 3-button pad's TH-multiplexed read protocol, plus the
+  **6-button** extension (extra TH cycles revealing X/Y/Z/Mode), auto-enabled when
+  the cartridge header advertises it.
+- **Persistence & cartridge features** — **battery SRAM** (mapped per the header's
+  SRAM info, gated by the $A130F1 latch, saved to a `.srm` file next to the ROM and
+  reloaded on launch), the **SSF2/SEGA bank-switching mapper** ($A130F3–$A130FF),
+  and **region/PAL** detection from the header (version register + 262/313-line,
+  60/50 Hz timing).
 - **Z80 sound CPU** — a full Zilog Z80 core (main + CB/ED/DD/FD/DDCB/FDCB tables,
   the S Z Y H X P/V N C flags, IX/IY, shadow registers, I/R, the three interrupt
   modes and NMI), wired to the Z80 memory map (8 KB sound RAM, YM2612/PSG ports,
@@ -81,8 +88,8 @@ on the features listed below. Here is exactly what works and what does not:
 - **FM/PSG accuracy** — the YM2612 is a linear-sine approximation (no SSG-EG, no
   channel-3 special mode, simplified LFO, the non-linear DAC quirk is not
   reproduced); good enough for recognizable music, not bit-exact.
-- **Save RAM (SRAM)** and bank-switching mappers; the 6-button pad; PAL/50 Hz
-  (Phase 9), plus save states and UI polish (Phase 10).
+- **Save states**, and UI polish — volume/region toggles, controller remap,
+  fullscreen, an FPS display, and a performance pass (Phase 10).
 - **VDP interlace** modes and **sub-line timing** (the H-interrupt itself is
   implemented; the HV counter's horizontal position and exact HBLANK timing are
   still per-scanline). Shadow/highlight is an approximation.
@@ -137,13 +144,18 @@ boot issues (frame stepping, PC breakpoints, RAM inspection, frame hashing).
 
 ## Controls
 
-| Action  | Key         |
-|---------|-------------|
-| D-pad   | Arrow keys  |
-| A       | A           |
-| B       | S           |
-| C       | D           |
-| Start   | Enter       |
+| Action      | Key         |
+|-------------|-------------|
+| D-pad       | Arrow keys  |
+| A           | A           |
+| B           | S           |
+| C           | D           |
+| X / Y / Z   | Q / W / E   |
+| Mode        | Shift       |
+| Start       | Enter       |
+
+X/Y/Z/Mode apply to 6-button games. Battery saves are written to a `.srm` file
+beside the ROM and reloaded automatically.
 
 Load a ROM, and use **Emulation → Reset** or **Pause / Resume** as needed.
 **Help → ROM Info** shows the decoded cartridge header.
