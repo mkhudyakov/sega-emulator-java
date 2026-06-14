@@ -53,8 +53,12 @@ features listed below. Here is exactly what works and what does not:
   the $6000 bank register and the $8000–$FFFF 68000 window). It runs the sound
   driver the 68000 uploads — under *Sonic* the Z80 comes out of reset, sets up its
   own stack and executes driver code each frame.
+- **SN76489 PSG** — full synthesis: three square-wave tone channels (10-bit
+  period → frequency) and a noise channel (16-bit LFSR, white/periodic, fixed
+  rates or tone-2 frequency), with the 2 dB-per-step attenuation table, producing
+  signed mono samples at 44.1 kHz. (Not yet routed to the speakers — see Phase 7.)
 - **YM2612** — register/status ports (status reads as not-busy so the busy-wait
-  loops games run after the SEGA logo terminate). Audio synthesis is still a stub.
+  loops games run after the SEGA logo terminate). FM synthesis is still a stub.
 - **Swing UI** — 320×224 display with aspect-correct scaling, ROM-info dialog,
   reset/pause, keyboard input. Plus a **headless mode** (`--headless`/`--info`)
   backed by the `debug.Debugger` harness.
@@ -64,9 +68,12 @@ features listed below. Here is exactly what works and what does not:
   YM2612 status).
 
 ### 🚧 Not yet implemented (the roadmap — see `PLAN.md`)
-- **Sound output**: the Z80 driver programs the chips, but the YM2612 FM and
-  SN76489 PSG still synthesize **silence** (register writes are latched only), and
-  there is no audio output/mixing yet.
+- **YM2612 FM synthesis** — register writes are latched but produce silence (the
+  PSG already synthesizes). Note the YM2612 **timers** are not yet modelled, so
+  SMPS-style drivers that pace themselves on the timer-overflow flags do not yet
+  advance to playing music.
+- **Audio output / mixing** — no samples reach the speakers yet (the mixer and
+  audio back-pressure clock arrive in Phase 7).
 - **VDP interlace** modes and **sub-line timing** (the H-interrupt itself is
   implemented; the HV counter's horizontal position and exact HBLANK timing are
   still per-scanline). Shadow/highlight is an approximation.

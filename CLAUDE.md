@@ -28,11 +28,12 @@ Requires **JDK 21+**.
 This is a **working foundation, not a complete emulator** (see README for the
 full breakdown). It boots commercial ROMs and renders their title screens with
 background planes **and sprites** (Sonic appears on his title emblem) via VDP
-DMA. The **Z80 sound CPU is a full core** that runs the uploaded sound driver,
-but the YM2612/PSG synthesis (and audio output) are still stubbed roadmap items —
-the chips latch register writes and emit silence. **`PLAN.md` is the phased
-development roadmap — follow it one phase at a time and keep it, the README, and
-class javadocs honest after each phase.**
+DMA. The **Z80 sound CPU is a full core** that runs the uploaded sound driver, and
+the **SN76489 PSG synthesizes** real samples; the **YM2612 FM synthesis** (and
+audio output) are still roadmap items — the YM2612 latches register writes and
+emits silence, and nothing is routed to the speakers yet. **`PLAN.md` is the
+phased development roadmap — follow it one phase at a time and keep it, the
+README, and class javadocs honest after each phase.**
 
 ## Architecture
 
