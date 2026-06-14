@@ -844,7 +844,8 @@ public final class M68000 {
     // ======================================================================
 
     private void groupSub(int op) {
-        if ((op & 0xF130) == 0x9100) { addxSubx(op, true); return; } // SUBX
+        // SUBX: like ADDX, exclude opmode 11 (SUBA.L) from the X-form decode.
+        if ((op & 0xF130) == 0x9100 && ((op >> 6) & 3) != 3) { addxSubx(op, true); return; }
         int opmode = (op >> 6) & 7;
         int dreg = (op >> 9) & 7;
         int mode = (op >> 3) & 7;
@@ -947,7 +948,9 @@ public final class M68000 {
     // ======================================================================
 
     private void groupAdd(int op) {
-        if ((op & 0xF130) == 0xD100) { addxSubx(op, false); return; } // ADDX
+        // ADDX: 1101 ddd1 ss00 0rrr. Its size field (bits 7-6) is byte/word/long
+        // (00/01/10) — opmode 11 there is ADDA.L, which must NOT be taken as ADDX.
+        if ((op & 0xF130) == 0xD100 && ((op >> 6) & 3) != 3) { addxSubx(op, false); return; }
         int opmode = (op >> 6) & 7;
         int dreg = (op >> 9) & 7;
         int mode = (op >> 3) & 7;

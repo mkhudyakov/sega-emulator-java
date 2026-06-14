@@ -11,22 +11,22 @@ resizable Swing display.
 
 ---
 
-## ⚠️ Status: boots real games to their title screens, with sound
+## ⚠️ Status: boots and plays *Sonic*'s Green Hill Zone, with sound
 
 The Mega Drive is a much larger machine than the NES — a 16/32-bit 68000, a Z80
-co-processor, a complex VDP, and FM + PSG sound. A *complete* emulator that plays
-*Sonic* all the way through is a multi-month effort. This project is an honest,
-well-tested **foundation** — but it now boots a real commercial ROM. *Sonic The
-Hedgehog* (USA/Europe) runs through its boot sequence, the SEGA logo, and into
-the animated title screen:
+co-processor, a complex VDP, and FM + PSG sound. This project is an honest,
+well-tested **foundation** that now runs a real commercial ROM into gameplay.
+*Sonic The Hedgehog* (USA/Europe) boots through the SEGA logo and the animated
+title screen:
 
 ![Sonic title screen](docs/sonic_title.png)
 
-Background planes **and sprites** render (Sonic appears on his title emblem), and
-**sound now plays**: the Z80 runs Sonic's SMPS driver, which drives the YM2612 FM
-chip and the channel-6 DAC, and the mixed stereo output is fed to the speakers
-through `javax.sound`. What it does **not** yet do: run full gameplay that depends
-on the features listed below. Here is exactly what works and what does not:
+…and the attract demo plays **Green Hill Zone** itself — the scrolling level, the
+HUD (score/time/rings), parallax background, animated water, Sonic and badniks all
+render, while the Z80 runs Sonic's SMPS driver to play the YM2612 FM music and the
+channel-6 DAC drums, mixed to the speakers through `javax.sound`. Background planes,
+the window plane, and sprites all composite with correct priority. Here is exactly
+what works and what is still approximate:
 
 ### ✅ Implemented
 - **Cartridge loading** — plain `.bin`/`.md`/`.gen` images and interleaved
@@ -85,8 +85,9 @@ on the features listed below. Here is exactly what works and what does not:
   the `debug.Debugger` harness.
 - **Tests** — a JUnit suite covering the CPU, the bus, the VDP (ports + sprites),
   ROM parsing, and the debug harness, including regression tests for the bugs
-  found while booting Sonic (SWAP/PEA decode, MOVE-to-SR, Z80 bus-request,
-  YM2612 status).
+  found while booting and running Sonic (SWAP/PEA decode, MOVE-to-SR, Z80
+  bus-request, YM2612 status, and **ADDA/SUBA.L Dn,An mis-decoded as ADDX/SUBX**
+  — the bug that froze Green Hill Zone).
 
 ### 🚧 Known limitations / accuracy gaps
 - **FM/PSG accuracy** — the YM2612 is a linear-sine approximation (no SSG-EG, no

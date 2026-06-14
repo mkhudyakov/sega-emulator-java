@@ -282,4 +282,32 @@ class M68000Test {
         cpu.step();
         assertEquals(0xABCD, cpu.getD(1) & 0xFFFF);
     }
+
+    /**
+     * Regression: {@code ADDA.L Dn,An} ($D3C2 = ADDA.L D2,A1) must add to the
+     * address register, not be mis-decoded as ADDX (which shares the top bits and
+     * a zero in bits 5-4). The bug clobbered D1 (and left A1 stale), wrecking
+     * Sonic's art decompressor and freezing the level with interrupts disabled.
+     */
+    @Test
+    void addaLongFromDataRegisterIsNotAddx() {
+        cpu.pokeD(2, 0x00000020);
+        cpu.pokeA(1, 0x00021AFE);
+        cpu.pokeD(1, 0x00000005);          // a live counter ADDX would corrupt
+        bus.poke(0x1000, 0xD3C2);          // ADDA.L D2,A1
+        cpu.step();
+        assertEquals(0x00021B1E, cpu.getA(1), "A1 = A1 + D2");
+        assertEquals(0x00000005, cpu.getD(1), "D1 must be untouched");
+    }
+
+    @Test
+    void subaLongFromDataRegisterIsNotSubx() {
+        cpu.pokeD(2, 0x00000010);
+        cpu.pokeA(1, 0x00001000);
+        cpu.pokeD(1, 0x00000007);
+        bus.poke(0x1000, 0x93C2);          // SUBA.L D2,A1
+        cpu.step();
+        assertEquals(0x00000FF0, cpu.getA(1), "A1 = A1 - D2");
+        assertEquals(0x00000007, cpu.getD(1), "D1 must be untouched");
+    }
 }
