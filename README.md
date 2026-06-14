@@ -11,7 +11,7 @@ resizable Swing display.
 
 ---
 
-## ⚠️ Status: boots real games to their title screens
+## ⚠️ Status: boots real games to their title screens, with sound
 
 The Mega Drive is a much larger machine than the NES — a 16/32-bit 68000, a Z80
 co-processor, a complex VDP, and FM + PSG sound. A *complete* emulator that plays
@@ -22,9 +22,11 @@ the animated title screen:
 
 ![Sonic title screen](docs/sonic_title.png)
 
-Background planes **and sprites** render (Sonic appears on his title emblem).
-What it does **not** yet do: play sound, or run full gameplay that depends on the
-features listed below. Here is exactly what works and what does not:
+Background planes **and sprites** render (Sonic appears on his title emblem), and
+**sound now plays**: the Z80 runs Sonic's SMPS driver, which drives the YM2612 FM
+chip and the channel-6 DAC, and the mixed stereo output is fed to the speakers
+through `javax.sound`. What it does **not** yet do: run full gameplay that depends
+on the features listed below. Here is exactly what works and what does not:
 
 ### ✅ Implemented
 - **Cartridge loading** — plain `.bin`/`.md`/`.gen` images and interleaved
@@ -56,14 +58,17 @@ features listed below. Here is exactly what works and what does not:
 - **SN76489 PSG** — full synthesis: three square-wave tone channels (10-bit
   period → frequency) and a noise channel (16-bit LFSR, white/periodic, fixed
   rates or tone-2 frequency), with the 2 dB-per-step attenuation table, producing
-  signed mono samples at 44.1 kHz. (Not yet routed to the speakers — see Phase 7.)
+  signed mono samples at 44.1 kHz (mixed to the speakers via `AudioMixer`).
 - **YM2612 FM** — 6 channels × 4 operators with phase generation (F-number/block,
   detune, multiple), an ADSR envelope generator on the OPN2 rate tables, the eight
   algorithms + operator-1 feedback, key-on/off, a basic LFO (AM/PM), the
   channel-6 DAC/PCM mode, and the two **timers** with their status flags. Under
-  *Sonic* the SMPS driver now advances on the timer flags and the title theme is
-  synthesized (FM + DAC). FM is a linear-sine approximation — recognizable, not
-  bit-exact — and, like the PSG, is not yet routed to the speakers (Phase 7).
+  *Sonic* the SMPS driver advances on the timer flags and the title theme plays
+  (FM + DAC). FM is a linear-sine approximation — recognizable, not bit-exact.
+- **Audio output** — `sound/AudioMixer` mixes the YM2612 (stereo) and SN76489
+  (mono) into 16-bit 44.1 kHz stereo PCM (with a DC blocker) and plays it through
+  a `javax.sound` line; the line's buffer provides the **back-pressure that paces
+  emulation** to ~60 fps. Falls back to a sleep clock when no audio device exists.
 - **Swing UI** — 320×224 display with aspect-correct scaling, ROM-info dialog,
   reset/pause, keyboard input. Plus a **headless mode** (`--headless`/`--info`)
   backed by the `debug.Debugger` harness.
@@ -73,20 +78,19 @@ features listed below. Here is exactly what works and what does not:
   YM2612 status).
 
 ### 🚧 Not yet implemented (the roadmap — see `PLAN.md`)
-- **Audio output / mixing** — both sound chips now synthesize samples, but nothing
-  reaches the speakers yet (the mixer and the audio back-pressure clock arrive in
-  Phase 7).
 - **FM/PSG accuracy** — the YM2612 is a linear-sine approximation (no SSG-EG, no
   channel-3 special mode, simplified LFO, the non-linear DAC quirk is not
   reproduced); good enough for recognizable music, not bit-exact.
+- **Save RAM (SRAM)** and bank-switching mappers; the 6-button pad; PAL/50 Hz
+  (Phase 9), plus save states and UI polish (Phase 10).
 - **VDP interlace** modes and **sub-line timing** (the H-interrupt itself is
   implemented; the HV counter's horizontal position and exact HBLANK timing are
   still per-scanline). Shadow/highlight is an approximation.
-- **Save RAM (SRAM)** and bank-switching mappers; the 6-button pad; PAL/50 Hz.
 
-In short: it **boots commercial ROMs and renders their title screens with
-sprites** (Sonic appears on his title emblem). Sound and the remaining VDP/timing
-features are what stand between this and full gameplay; `PLAN.md` is the
+In short: it **boots commercial ROMs, renders their title screens with sprites,
+and plays their music** (Sonic's FM+DAC title theme). The remaining persistence,
+input and VDP/timing features are what stand between this and full gameplay;
+`PLAN.md` is the
 phase-by-phase roadmap there.
 
 ---

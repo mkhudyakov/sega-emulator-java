@@ -31,10 +31,11 @@ background planes **and sprites** (Sonic appears on his title emblem) via VDP
 DMA. The **Z80 sound CPU is a full core** that runs the uploaded sound driver, and
 both the **SN76489 PSG and the YM2612 FM** chip synthesize samples (the YM2612
 including its timers and the channel-6 DAC, so *Sonic*'s SMPS driver advances and
-plays the title theme) — but **nothing is routed to the speakers yet** (the audio
-mixer/output is Phase 7), and the FM core is an approximation. **`PLAN.md` is the
-phased development roadmap — follow it one phase at a time and keep it, the
-README, and class javadocs honest after each phase.**
+plays the title theme), and `sound/AudioMixer` mixes them to stereo PCM and
+**plays it through `javax.sound`**, with the audio line's buffer pacing the
+emulation loop. The FM core is an approximation. **`PLAN.md` is the phased
+development roadmap — follow it one phase at a time and keep it, the README, and
+class javadocs honest after each phase.**
 
 ## Architecture
 
@@ -106,8 +107,10 @@ back it.
 **Timing model** (`GenesisSystem.stepFrame`): NTSC reference clock ~7.67 MHz, 262
 scanlines at ~59.92 fps → ~488 CPU cycles per scanline. The CPU runs a cycle
 budget per line, then the VDP steps one line; the vertical interrupt is delivered
-when the VDP signals vblank. The emulation thread (in `ui/EmulatorFrame`) paces
-itself with a sleep-based 60 fps clock (no audio back-pressure yet).
+when the VDP signals vblank. The emulation thread (in `ui/EmulatorFrame`) is
+paced by **audio back-pressure**: `sound/AudioMixer.play` blocks on the
+`SourceDataLine` buffer, locking the loop to ~60 fps; it falls back to a
+sleep-based clock when no audio device is available.
 
 **Controller** (`io/Controller.java`): the 3-button pad multiplexes eight buttons
 onto six data lines using the TH select line (bit 6); buttons are active-low.

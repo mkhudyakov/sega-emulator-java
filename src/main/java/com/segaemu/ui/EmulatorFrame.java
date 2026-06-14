@@ -4,6 +4,7 @@ import com.segaemu.GenesisSystem;
 import com.segaemu.cartridge.InvalidRomException;
 import com.segaemu.cartridge.Rom;
 import com.segaemu.io.Controller;
+import com.segaemu.sound.AudioMixer;
 import java.awt.BorderLayout;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
@@ -35,6 +36,7 @@ public final class EmulatorFrame extends JFrame {
     private static final long FRAME_NANOS = (long) (1_000_000_000L / TARGET_FPS);
 
     private final ScreenPanel screen = new ScreenPanel();
+    private final AudioMixer audio = new AudioMixer(GenesisSystem.FPS);
 
     private GenesisSystem genesis;
     private volatile boolean running = false;
@@ -123,6 +125,7 @@ public final class EmulatorFrame extends JFrame {
     private void resetSystem() {
         if (romLoaded && genesis != null) {
             genesis.reset();
+            audio.flush();
         }
     }
 
@@ -162,6 +165,7 @@ public final class EmulatorFrame extends JFrame {
             }
             emulationThread = null;
         }
+        audio.flush();
     }
 
     private void emulationLoop() {
@@ -177,18 +181,23 @@ public final class EmulatorFrame extends JFrame {
             }
             screen.updateFrame(genesis.framebuffer());
 
-            // No audio yet, so pace to ~60 fps with a sleep-based clock.
-            nextFrame += FRAME_NANOS;
-            long sleep = nextFrame - System.nanoTime();
-            if (sleep > 0) {
-                try {
-                    Thread.sleep(sleep / 1_000_000L, (int) (sleep % 1_000_000L));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
+            // Prefer audio back-pressure as the master clock: play() blocks on the
+            // sound line, locking the loop to ~60 fps. With no audio device, fall
+            // back to a sleep-based clock.
+            boolean paced = audio.play(genesis.ym2612(), genesis.psg());
+            if (!paced) {
+                nextFrame += FRAME_NANOS;
+                long sleep = nextFrame - System.nanoTime();
+                if (sleep > 0) {
+                    try {
+                        Thread.sleep(sleep / 1_000_000L, (int) (sleep % 1_000_000L));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                } else {
+                    nextFrame = System.nanoTime();
                 }
-            } else {
-                nextFrame = System.nanoTime();
             }
         }
     }
