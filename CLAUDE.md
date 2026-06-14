@@ -29,9 +29,10 @@ This is a **working foundation, not a complete emulator** (see README for the
 full breakdown). It boots commercial ROMs and renders their title screens with
 background planes **and sprites** (Sonic appears on his title emblem) via VDP
 DMA. The **Z80 sound CPU is a full core** that runs the uploaded sound driver, and
-the **SN76489 PSG synthesizes** real samples; the **YM2612 FM synthesis** (and
-audio output) are still roadmap items — the YM2612 latches register writes and
-emits silence, and nothing is routed to the speakers yet. **`PLAN.md` is the
+both the **SN76489 PSG and the YM2612 FM** chip synthesize samples (the YM2612
+including its timers and the channel-6 DAC, so *Sonic*'s SMPS driver advances and
+plays the title theme) — but **nothing is routed to the speakers yet** (the audio
+mixer/output is Phase 7), and the FM core is an approximation. **`PLAN.md` is the
 phased development roadmap — follow it one phase at a time and keep it, the
 README, and class javadocs honest after each phase.**
 

@@ -57,8 +57,13 @@ features listed below. Here is exactly what works and what does not:
   period → frequency) and a noise channel (16-bit LFSR, white/periodic, fixed
   rates or tone-2 frequency), with the 2 dB-per-step attenuation table, producing
   signed mono samples at 44.1 kHz. (Not yet routed to the speakers — see Phase 7.)
-- **YM2612** — register/status ports (status reads as not-busy so the busy-wait
-  loops games run after the SEGA logo terminate). FM synthesis is still a stub.
+- **YM2612 FM** — 6 channels × 4 operators with phase generation (F-number/block,
+  detune, multiple), an ADSR envelope generator on the OPN2 rate tables, the eight
+  algorithms + operator-1 feedback, key-on/off, a basic LFO (AM/PM), the
+  channel-6 DAC/PCM mode, and the two **timers** with their status flags. Under
+  *Sonic* the SMPS driver now advances on the timer flags and the title theme is
+  synthesized (FM + DAC). FM is a linear-sine approximation — recognizable, not
+  bit-exact — and, like the PSG, is not yet routed to the speakers (Phase 7).
 - **Swing UI** — 320×224 display with aspect-correct scaling, ROM-info dialog,
   reset/pause, keyboard input. Plus a **headless mode** (`--headless`/`--info`)
   backed by the `debug.Debugger` harness.
@@ -68,12 +73,12 @@ features listed below. Here is exactly what works and what does not:
   YM2612 status).
 
 ### 🚧 Not yet implemented (the roadmap — see `PLAN.md`)
-- **YM2612 FM synthesis** — register writes are latched but produce silence (the
-  PSG already synthesizes). Note the YM2612 **timers** are not yet modelled, so
-  SMPS-style drivers that pace themselves on the timer-overflow flags do not yet
-  advance to playing music.
-- **Audio output / mixing** — no samples reach the speakers yet (the mixer and
-  audio back-pressure clock arrive in Phase 7).
+- **Audio output / mixing** — both sound chips now synthesize samples, but nothing
+  reaches the speakers yet (the mixer and the audio back-pressure clock arrive in
+  Phase 7).
+- **FM/PSG accuracy** — the YM2612 is a linear-sine approximation (no SSG-EG, no
+  channel-3 special mode, simplified LFO, the non-linear DAC quirk is not
+  reproduced); good enough for recognizable music, not bit-exact.
 - **VDP interlace** modes and **sub-line timing** (the H-interrupt itself is
   implemented; the HV counter's horizontal position and exact HBLANK timing are
   still per-scanline). Shadow/highlight is an approximation.

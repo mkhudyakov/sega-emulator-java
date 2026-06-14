@@ -123,6 +123,9 @@ public final class GenesisSystem {
             if (!inReset && !bus.isZ80BusRequested()) {
                 z80.run(Z80_CYCLES_PER_LINE);
             }
+            // The YM2612 timers run continuously (independent of audio pull) so
+            // drivers that pace on the timer-overflow flags keep time.
+            ym2612.stepTimers(CYCLES_PER_LINE);
             boolean frameDone = vdp.stepScanline();
             // Deliver the vertical interrupt (higher priority) first, then the
             // horizontal one. Each stays pending until the CPU actually accepts
