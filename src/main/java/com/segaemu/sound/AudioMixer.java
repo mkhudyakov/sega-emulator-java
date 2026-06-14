@@ -32,6 +32,7 @@ public final class AudioMixer {
 
     private double fps;
     private double sampleAccum;
+    private volatile boolean muted;
 
     // Reusable per-frame buffers.
     private int[] ymL = new int[0];
@@ -69,6 +70,14 @@ public final class AudioMixer {
         this.fps = fps;
     }
 
+    public void setMuted(boolean muted) {
+        this.muted = muted;
+    }
+
+    public boolean isMuted() {
+        return muted;
+    }
+
     /** Number of samples for the next frame, keeping the long-run rate exact. */
     public int nextFrameSampleCount() {
         sampleAccum += SAMPLE_RATE / fps;
@@ -89,9 +98,13 @@ public final class AudioMixer {
         if (!available) {
             return false;
         }
-        for (int i = 0; i < count; i++) {
-            putSample(i * 4, ymL[i]);
-            putSample(i * 4 + 2, ymR[i]);
+        if (muted) {
+            java.util.Arrays.fill(bytes, 0, count * 4, (byte) 0);
+        } else {
+            for (int i = 0; i < count; i++) {
+                putSample(i * 4, ymL[i]);
+                putSample(i * 4 + 2, ymR[i]);
+            }
         }
         line.write(bytes, 0, count * 4);
         return true;

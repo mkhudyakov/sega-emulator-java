@@ -215,6 +215,44 @@ public final class GenesisSystem {
         return bus;
     }
 
+    // ---- save states ------------------------------------------------------
+
+    private static final int STATE_MAGIC = 0x4D44_5354; // "MDST"
+    private static final int STATE_VERSION = 1;
+
+    /** Serialize the full machine state (CPU, VDP, Z80, sound chips, RAM). */
+    public void saveState(java.io.OutputStream stream) throws java.io.IOException {
+        var o = new java.io.DataOutputStream(stream);
+        o.writeInt(STATE_MAGIC);
+        o.writeInt(STATE_VERSION);
+        cpu.saveState(o);
+        vdp.saveState(o);
+        z80.saveState(o);
+        ym2612.saveState(o);
+        psg.saveState(o);
+        bus.saveState(o);
+        o.writeBoolean(z80WasReset);
+        o.flush();
+    }
+
+    /** Restore machine state written by {@link #saveState}. */
+    public void loadState(java.io.InputStream stream) throws java.io.IOException {
+        var in = new java.io.DataInputStream(stream);
+        if (in.readInt() != STATE_MAGIC) {
+            throw new java.io.IOException("Not a Mega Drive save state.");
+        }
+        if (in.readInt() != STATE_VERSION) {
+            throw new java.io.IOException("Unsupported save-state version.");
+        }
+        cpu.loadState(in);
+        vdp.loadState(in);
+        z80.loadState(in);
+        ym2612.loadState(in);
+        psg.loadState(in);
+        bus.loadState(in);
+        z80WasReset = in.readBoolean();
+    }
+
     /** Read a byte from 68000 work RAM ($FF0000–$FFFFFF) with no side effects. */
     public int readWorkRam(int addr) {
         return bus.peekWorkRam(addr);

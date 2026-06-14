@@ -783,4 +783,52 @@ public final class Vdp {
     public int code() {
         return codeReg;
     }
+
+    // ---- save state -------------------------------------------------------
+
+    public void saveState(java.io.DataOutputStream o) throws java.io.IOException {
+        o.write(vram);
+        for (int v : cram) o.writeInt(v);
+        for (int v : vsram) o.writeInt(v);
+        for (int v : reg) o.writeInt(v);
+        o.writeBoolean(controlPending);
+        o.writeInt(controlFirst);
+        o.writeInt(addressReg);
+        o.writeInt(codeReg);
+        o.writeInt(readBuffer);
+        o.writeInt(scanline);
+        o.writeBoolean(pal);
+        o.writeBoolean(vblank);
+        o.writeBoolean(frameComplete);
+        o.writeBoolean(vIntPending);
+        o.writeBoolean(hIntPending);
+        o.writeInt(hIntCounter);
+        o.writeBoolean(spriteOverflow);
+        o.writeBoolean(spriteCollision);
+        o.writeBoolean(dma68kPending);
+        o.writeBoolean(fillPending);
+    }
+
+    public void loadState(java.io.DataInputStream in) throws java.io.IOException {
+        in.readFully(vram);
+        for (int i = 0; i < cram.length; i++) cram[i] = in.readInt();
+        for (int i = 0; i < vsram.length; i++) vsram[i] = in.readInt();
+        for (int i = 0; i < reg.length; i++) reg[i] = in.readInt();
+        controlPending = in.readBoolean();
+        controlFirst = in.readInt();
+        addressReg = in.readInt();
+        codeReg = in.readInt();
+        readBuffer = in.readInt();
+        scanline = in.readInt();
+        pal = in.readBoolean();
+        vblank = in.readBoolean();
+        frameComplete = in.readBoolean();
+        vIntPending = in.readBoolean();
+        hIntPending = in.readBoolean();
+        hIntCounter = in.readInt();
+        spriteOverflow = in.readBoolean();
+        spriteCollision = in.readBoolean();
+        dma68kPending = in.readBoolean();
+        fillPending = in.readBoolean();
+    }
 }

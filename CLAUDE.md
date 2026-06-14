@@ -33,9 +33,11 @@ both the **SN76489 PSG and the YM2612 FM** chip synthesize samples (the YM2612
 including its timers and the channel-6 DAC, so *Sonic*'s SMPS driver advances and
 plays the title theme), and `sound/AudioMixer` mixes them to stereo PCM and
 **plays it through `javax.sound`**, with the audio line's buffer pacing the
-emulation loop. The FM core is an approximation. **`PLAN.md` is the phased
-development roadmap — follow it one phase at a time and keep it, the README, and
-class javadocs honest after each phase.**
+emulation loop. The FM core is an approximation. Input (3-/6-button), battery
+SRAM, the SSF2 mapper, region/PAL timing, and **save states** are all in. **All
+phases of `PLAN.md` (0–10) are complete**; remaining work is accuracy refinement
+(FM fidelity, sub-line VDP timing) and running the external test-ROM suites. Keep
+`PLAN.md`, the README, and class javadocs honest as you refine.
 
 ## Architecture
 
@@ -103,6 +105,14 @@ is pulsed at vblank (`requestInterrupt`/`clearInterrupt`), independent of the
 RAM-peek / screenshot tool used to diagnose boot bugs; also exposed via
 `Main --headless`/`--info`. `GenesisSystem.setInstructionHook` + `requestBreak`
 back it.
+
+**Save states**: every component exposes `saveState(DataOutputStream)` /
+`loadState(DataInputStream)`; `GenesisSystem.saveState/loadState` wraps them with a
+magic+version header. `ui/EmulatorFrame` persists a `.mds` file beside the ROM and
+applies save/load **between frames on the emulation thread** (F5/F7) to avoid
+races. When adding mutable state to any core class, extend its `saveState`/
+`loadState` in the same field order — the `SaveStateTest` byte-stability check
+(re-saving after a load must be identical) catches mismatches.
 
 **Timing model** (`GenesisSystem.stepFrame`): NTSC reference clock ~7.67 MHz, 262
 scanlines at ~59.92 fps → ~488 CPU cycles per scanline. The CPU runs a cycle

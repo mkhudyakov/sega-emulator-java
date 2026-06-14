@@ -1165,4 +1165,33 @@ public final class Z80 {
     public void pokeDE(int v) { setDe(v); }
     public void pokeHL(int v) { setHl(v); }
     public void pokeSP(int v) { sp = v & 0xFFFF; }
+
+    // ---- save state -------------------------------------------------------
+
+    public void saveState(java.io.DataOutputStream o) throws java.io.IOException {
+        int[] regs = {a, f, b, c, d, e, h, l, a2, f2, b2, c2, d2, e2, h2, l2,
+                ix, iy, sp, pc, i, r, im};
+        for (int v : regs) o.writeInt(v);
+        o.writeBoolean(iff1);
+        o.writeBoolean(iff2);
+        o.writeBoolean(halted);
+        o.writeBoolean(intLine);
+        o.writeBoolean(nmiPending);
+        o.writeBoolean(eiPending);
+    }
+
+    public void loadState(java.io.DataInputStream in) throws java.io.IOException {
+        a = in.readInt(); f = in.readInt(); b = in.readInt(); c = in.readInt();
+        d = in.readInt(); e = in.readInt(); h = in.readInt(); l = in.readInt();
+        a2 = in.readInt(); f2 = in.readInt(); b2 = in.readInt(); c2 = in.readInt();
+        d2 = in.readInt(); e2 = in.readInt(); h2 = in.readInt(); l2 = in.readInt();
+        ix = in.readInt(); iy = in.readInt(); sp = in.readInt(); pc = in.readInt();
+        i = in.readInt(); r = in.readInt(); im = in.readInt();
+        iff1 = in.readBoolean();
+        iff2 = in.readBoolean();
+        halted = in.readBoolean();
+        intLine = in.readBoolean();
+        nmiPending = in.readBoolean();
+        eiPending = in.readBoolean();
+    }
 }

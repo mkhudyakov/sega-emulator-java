@@ -1,6 +1,9 @@
 package com.segaemu.cpu.m68k;
 
 import com.segaemu.bus.Bus68000;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 
 /**
  * A Motorola 68000 CPU core implementing a functional subset of the instruction
@@ -1501,4 +1504,38 @@ public final class M68000 {
     public boolean nn() { return flagN; }
     public boolean vv() { return flagV; }
     public boolean xx() { return flagX; }
+
+    // ---- save state -------------------------------------------------------
+
+    public void saveState(DataOutputStream o) throws IOException {
+        for (int v : d) o.writeInt(v);
+        for (int v : a) o.writeInt(v);
+        o.writeInt(pc);
+        o.writeInt(usp);
+        o.writeInt(ssp);
+        o.writeBoolean(flagC);
+        o.writeBoolean(flagV);
+        o.writeBoolean(flagZ);
+        o.writeBoolean(flagN);
+        o.writeBoolean(flagX);
+        o.writeBoolean(supervisor);
+        o.writeInt(interruptMask);
+        o.writeBoolean(stopped);
+    }
+
+    public void loadState(DataInputStream in) throws IOException {
+        for (int i = 0; i < 8; i++) d[i] = in.readInt();
+        for (int i = 0; i < 8; i++) a[i] = in.readInt();
+        pc = in.readInt();
+        usp = in.readInt();
+        ssp = in.readInt();
+        flagC = in.readBoolean();
+        flagV = in.readBoolean();
+        flagZ = in.readBoolean();
+        flagN = in.readBoolean();
+        flagX = in.readBoolean();
+        supervisor = in.readBoolean();
+        interruptMask = in.readInt();
+        stopped = in.readBoolean();
+    }
 }

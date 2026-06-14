@@ -557,4 +557,62 @@ public final class Ym2612 {
     public int channelEnvelope(int ch, int slot) { return opEnv[ch * 4 + slot]; }
     public int channelEgState(int ch, int slot) { return opEgState[ch * 4 + slot]; }
     public boolean isDacEnabled() { return dacEnabled; }
+
+    // ---- save state -------------------------------------------------------
+
+    public void saveState(java.io.DataOutputStream o) throws java.io.IOException {
+        for (int[] bank : registers) for (int v : bank) o.writeInt(v);
+        for (int v : latchedAddr) o.writeInt(v);
+        for (int op = 0; op < 24; op++) {
+            o.writeInt(opDt[op]); o.writeInt(opMul[op]); o.writeInt(opTl[op]);
+            o.writeInt(opKs[op]); o.writeInt(opAr[op]); o.writeInt(opDr[op]);
+            o.writeInt(opSr[op]); o.writeInt(opRr[op]); o.writeInt(opSl[op]);
+            o.writeBoolean(opAm[op]); o.writeInt(opEgState[op]); o.writeInt(opEnv[op]);
+            o.writeLong(opPhase[op]);
+        }
+        for (int ch = 0; ch < 6; ch++) {
+            o.writeInt(chFnum[ch]); o.writeInt(chBlock[ch]); o.writeInt(chAlg[ch]);
+            o.writeInt(chFb[ch]); o.writeBoolean(chL[ch]); o.writeBoolean(chR[ch]);
+            o.writeInt(chAms[ch]); o.writeInt(chFms[ch]);
+            o.writeInt(fbOut1[ch]); o.writeInt(fbOut2[ch]);
+        }
+        for (int v : chFnumLatch) o.writeInt(v);
+        o.writeBoolean(dacEnabled); o.writeInt(dacData);
+        o.writeBoolean(lfoEnabled); o.writeInt(lfoFreq); o.writeDouble(lfoPhase);
+        o.writeInt(timerAReg); o.writeInt(timerBReg);
+        o.writeBoolean(timerARunning); o.writeBoolean(timerBRunning);
+        o.writeBoolean(timerAEnable); o.writeBoolean(timerBEnable);
+        o.writeBoolean(flagA); o.writeBoolean(flagB);
+        o.writeInt(timerACount); o.writeInt(timerBCount); o.writeInt(timerBSub);
+        o.writeDouble(timerSampleAccum);
+        o.writeInt(egCounter); o.writeInt(egPrescaler); o.writeDouble(fmSampleAccum);
+    }
+
+    public void loadState(java.io.DataInputStream in) throws java.io.IOException {
+        for (int[] bank : registers) for (int j = 0; j < bank.length; j++) bank[j] = in.readInt();
+        for (int j = 0; j < latchedAddr.length; j++) latchedAddr[j] = in.readInt();
+        for (int op = 0; op < 24; op++) {
+            opDt[op] = in.readInt(); opMul[op] = in.readInt(); opTl[op] = in.readInt();
+            opKs[op] = in.readInt(); opAr[op] = in.readInt(); opDr[op] = in.readInt();
+            opSr[op] = in.readInt(); opRr[op] = in.readInt(); opSl[op] = in.readInt();
+            opAm[op] = in.readBoolean(); opEgState[op] = in.readInt(); opEnv[op] = in.readInt();
+            opPhase[op] = in.readLong();
+        }
+        for (int ch = 0; ch < 6; ch++) {
+            chFnum[ch] = in.readInt(); chBlock[ch] = in.readInt(); chAlg[ch] = in.readInt();
+            chFb[ch] = in.readInt(); chL[ch] = in.readBoolean(); chR[ch] = in.readBoolean();
+            chAms[ch] = in.readInt(); chFms[ch] = in.readInt();
+            fbOut1[ch] = in.readInt(); fbOut2[ch] = in.readInt();
+        }
+        for (int j = 0; j < chFnumLatch.length; j++) chFnumLatch[j] = in.readInt();
+        dacEnabled = in.readBoolean(); dacData = in.readInt();
+        lfoEnabled = in.readBoolean(); lfoFreq = in.readInt(); lfoPhase = in.readDouble();
+        timerAReg = in.readInt(); timerBReg = in.readInt();
+        timerARunning = in.readBoolean(); timerBRunning = in.readBoolean();
+        timerAEnable = in.readBoolean(); timerBEnable = in.readBoolean();
+        flagA = in.readBoolean(); flagB = in.readBoolean();
+        timerACount = in.readInt(); timerBCount = in.readInt(); timerBSub = in.readInt();
+        timerSampleAccum = in.readDouble();
+        egCounter = in.readInt(); egPrescaler = in.readInt(); fmSampleAccum = in.readDouble();
+    }
 }

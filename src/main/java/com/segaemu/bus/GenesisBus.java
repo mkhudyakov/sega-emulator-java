@@ -398,4 +398,34 @@ public final class GenesisBus implements Bus68000, Z80Bus {
             System.arraycopy(data, 0, sram, 0, Math.min(data.length, sram.length));
         }
     }
+
+    // ---- save state -------------------------------------------------------
+
+    public void saveState(java.io.DataOutputStream o) throws java.io.IOException {
+        o.write(workRam);
+        o.write(z80Ram);
+        o.writeBoolean(z80BusRequested);
+        o.writeBoolean(z80Reset);
+        o.writeInt(z80Bank);
+        o.writeBoolean(sramEnabled);
+        o.writeBoolean(sramWriteProtect);
+        for (int v : romBank) o.writeInt(v);
+        if (sram != null) {
+            o.write(sram);
+        }
+    }
+
+    public void loadState(java.io.DataInputStream in) throws java.io.IOException {
+        in.readFully(workRam);
+        in.readFully(z80Ram);
+        z80BusRequested = in.readBoolean();
+        z80Reset = in.readBoolean();
+        z80Bank = in.readInt();
+        sramEnabled = in.readBoolean();
+        sramWriteProtect = in.readBoolean();
+        for (int i = 0; i < romBank.length; i++) romBank[i] = in.readInt();
+        if (sram != null) {
+            in.readFully(sram);
+        }
+    }
 }

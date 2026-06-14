@@ -76,20 +76,28 @@ on the features listed below. Here is exactly what works and what does not:
   (mono) into 16-bit 44.1 kHz stereo PCM (with a DC blocker) and plays it through
   a `javax.sound` line; the line's buffer provides the **back-pressure that paces
   emulation** to ~60 fps. Falls back to a sleep clock when no audio device exists.
+- **Save states** — the full machine (68000, VDP, Z80, YM2612, SN76489, all RAM)
+  serializes to a `.mds` file beside the ROM and restores exactly (verified by a
+  save → diverge → reload round trip that reproduces the framebuffer bit-for-bit).
 - **Swing UI** — 320×224 display with aspect-correct scaling, ROM-info dialog,
-  reset/pause, keyboard input. Plus a **headless mode** (`--headless`/`--info`)
-  backed by the `debug.Debugger` harness.
+  reset/pause, save/load state (F5/F7), mute, a live FPS readout in the title bar,
+  and keyboard input. Plus a **headless mode** (`--headless`/`--info`) backed by
+  the `debug.Debugger` harness.
 - **Tests** — a JUnit suite covering the CPU, the bus, the VDP (ports + sprites),
   ROM parsing, and the debug harness, including regression tests for the bugs
   found while booting Sonic (SWAP/PEA decode, MOVE-to-SR, Z80 bus-request,
   YM2612 status).
 
-### 🚧 Not yet implemented (the roadmap — see `PLAN.md`)
+### 🚧 Known limitations / accuracy gaps
 - **FM/PSG accuracy** — the YM2612 is a linear-sine approximation (no SSG-EG, no
   channel-3 special mode, simplified LFO, the non-linear DAC quirk is not
   reproduced); good enough for recognizable music, not bit-exact.
-- **Save states**, and UI polish — volume/region toggles, controller remap,
-  fullscreen, an FPS display, and a performance pass (Phase 10).
+- **Sub-line VDP timing** — the HV counter has no horizontal position and HBLANK
+  is per-scanline; DMA is instantaneous; interlace modes are not implemented.
+- **Validation** — the external 68000 SingleStepTests and the Z80 zexall
+  exercisers have not yet been run (they need their test ROMs / a network fetch).
+- These are accuracy refinements, not missing features — the phased roadmap in
+  `PLAN.md` is complete (Phases 0–10).
 - **VDP interlace** modes and **sub-line timing** (the H-interrupt itself is
   implemented; the HV counter's horizontal position and exact HBLANK timing are
   still per-scanline). Shadow/highlight is an approximation.
@@ -155,7 +163,9 @@ boot issues (frame stepping, PC breakpoints, RAM inspection, frame hashing).
 | Start       | Enter       |
 
 X/Y/Z/Mode apply to 6-button games. Battery saves are written to a `.srm` file
-beside the ROM and reloaded automatically.
+beside the ROM and reloaded automatically. **F5** saves a state and **F7** loads
+it (a `.mds` file beside the ROM); the Emulation menu also has Mute and the title
+bar shows the live frame rate.
 
 Load a ROM, and use **Emulation → Reset** or **Pause / Resume** as needed.
 **Help → ROM Info** shows the decoded cartridge header.

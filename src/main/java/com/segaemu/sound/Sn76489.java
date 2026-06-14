@@ -195,4 +195,34 @@ public final class Sn76489 {
     public int noiseRegister() {
         return noiseReg;
     }
+
+    // ---- save state -------------------------------------------------------
+
+    public void saveState(java.io.DataOutputStream o) throws java.io.IOException {
+        for (int v : tone) o.writeInt(v);
+        for (int v : volume) o.writeInt(v);
+        o.writeInt(noiseReg);
+        o.writeInt(latchedChannel);
+        o.writeBoolean(latchedVolume);
+        for (int v : counter) o.writeInt(v);
+        for (int v : polarity) o.writeInt(v);
+        o.writeInt(noiseCounter);
+        o.writeBoolean(noiseFlip);
+        o.writeInt(lfsr);
+        o.writeDouble(cycleAccum);
+    }
+
+    public void loadState(java.io.DataInputStream in) throws java.io.IOException {
+        for (int i = 0; i < tone.length; i++) tone[i] = in.readInt();
+        for (int i = 0; i < volume.length; i++) volume[i] = in.readInt();
+        noiseReg = in.readInt();
+        latchedChannel = in.readInt();
+        latchedVolume = in.readBoolean();
+        for (int i = 0; i < counter.length; i++) counter[i] = in.readInt();
+        for (int i = 0; i < polarity.length; i++) polarity[i] = in.readInt();
+        noiseCounter = in.readInt();
+        noiseFlip = in.readBoolean();
+        lfsr = in.readInt();
+        cycleAccum = in.readDouble();
+    }
 }

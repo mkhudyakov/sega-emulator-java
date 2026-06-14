@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
@@ -46,7 +47,13 @@ public final class EmulatorFrame extends JFrame {
     private Path romPath;
     private volatile boolean running = false;
     private volatile boolean romLoaded = false;
+    private volatile boolean saveStateRequested = false;
+    private volatile boolean loadStateRequested = false;
     private Thread emulationThread;
+
+    private long fpsWindowStart = System.nanoTime();
+    private int fpsFrames = 0;
+    private String baseTitle = "Sega Mega Drive Emulator";
 
     public EmulatorFrame() {
         super("Sega Mega Drive Emulator");
@@ -105,6 +112,60 @@ public final class EmulatorFrame extends JFrame {
     }
 
     // ------------------------------------------------------------------
+    // Save states (.mds next to the ROM) — applied on the emulation thread
+    // ------------------------------------------------------------------
+
+    private Path statePath() {
+        if (romPath == null) {
+            return null;
+        }
+        String name = romPath.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        String base = dot > 0 ? name.substring(0, dot) : name;
+        return romPath.resolveSibling(base + ".mds");
+    }
+
+    /** Process any pending save/load requests between frames (no threading races). */
+    private void handleStateRequests() {
+        if (saveStateRequested) {
+            saveStateRequested = false;
+            Path p = statePath();
+            if (p != null) {
+                try (var out = Files.newOutputStream(p)) {
+                    genesis.saveState(out);
+                } catch (IOException ex) {
+                    showError("Save state failed", String.valueOf(ex.getMessage()));
+                }
+            }
+        }
+        if (loadStateRequested) {
+            loadStateRequested = false;
+            Path p = statePath();
+            if (p != null && Files.exists(p)) {
+                try (var in = Files.newInputStream(p)) {
+                    genesis.loadState(in);
+                    audio.flush();
+                } catch (IOException ex) {
+                    showError("Load state failed", String.valueOf(ex.getMessage()));
+                }
+            }
+        }
+    }
+
+    private void updateFpsTitle() {
+        fpsFrames++;
+        long now = System.nanoTime();
+        long elapsed = now - fpsWindowStart;
+        if (elapsed >= 1_000_000_000L) {
+            double fps = fpsFrames * 1e9 / elapsed;
+            fpsFrames = 0;
+            fpsWindowStart = now;
+            String t = String.format("%s — %.0f fps", baseTitle, fps);
+            SwingUtilities.invokeLater(() -> setTitle(t));
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Menu
     // ------------------------------------------------------------------
 
@@ -125,8 +186,19 @@ public final class EmulatorFrame extends JFrame {
         reset.addActionListener(e -> resetSystem());
         JMenuItem pause = new JMenuItem("Pause / Resume");
         pause.addActionListener(e -> togglePause());
+        JMenuItem saveState = new JMenuItem("Save State (F5)");
+        saveState.addActionListener(e -> saveStateRequested = true);
+        JMenuItem loadState = new JMenuItem("Load State (F7)");
+        loadState.addActionListener(e -> loadStateRequested = true);
+        JCheckBoxMenuItem mute = new JCheckBoxMenuItem("Mute");
+        mute.addActionListener(e -> audio.setMuted(mute.isSelected()));
         emuMenu.add(reset);
         emuMenu.add(pause);
+        emuMenu.addSeparator();
+        emuMenu.add(saveState);
+        emuMenu.add(loadState);
+        emuMenu.addSeparator();
+        emuMenu.add(mute);
 
         JMenu helpMenu = new JMenu("Help");
         JMenuItem controls = new JMenuItem("Controls");
@@ -165,7 +237,8 @@ public final class EmulatorFrame extends JFrame {
             romLoaded = true;
             audio.setFps(genesis.fps());
             loadSram();
-            setTitle("Sega Mega Drive Emulator — " + rom.header().displayTitle());
+            baseTitle = "Sega Mega Drive Emulator — " + rom.header().displayTitle();
+            setTitle(baseTitle);
             startEmulation();
         } catch (InvalidRomException ex) {
             romLoaded = false;
@@ -234,6 +307,8 @@ public final class EmulatorFrame extends JFrame {
                 return;
             }
             screen.updateFrame(genesis.framebuffer());
+            handleStateRequests();
+            updateFpsTitle();
 
             // Prefer audio back-pressure as the master clock: play() blocks on the
             // sound line, locking the loop to ~60 fps. With no audio device, fall
@@ -264,6 +339,14 @@ public final class EmulatorFrame extends JFrame {
         KeyAdapter adapter = new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_F5) {
+                    saveStateRequested = true;
+                    return;
+                }
+                if (e.getKeyCode() == KeyEvent.VK_F7) {
+                    loadStateRequested = true;
+                    return;
+                }
                 setButton(e, true);
             }
 
