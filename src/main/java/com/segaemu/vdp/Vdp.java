@@ -730,6 +730,11 @@ public final class Vdp {
      * (base = register 13 &times; $400) holds a plane-A word then a plane-B word
      * per entry; register 11 bits 0-1 pick how often entries change:
      * 0 = whole screen, 2 = every 8 lines (cell), 3 = every line.
+     *
+     * <p>The returned value is the 10-bit VDP scroll amount: {@code computePlaneRow}
+     * shows screen column X as plane column {@code (X - hscroll)}, exactly as the
+     * hardware does. Games (e.g. Sonic) store the negated camera position, so this
+     * is used directly — negating it here would scroll the plane the wrong way.
      */
     private int planeHScroll(int y, int planeIndex) {
         int base = (reg[13] & 0x3F) << 10;
@@ -740,7 +745,7 @@ public final class Vdp {
         };
         int entry = base + row * 4 + planeIndex * 2;
         int hs = ((vram[entry & 0xFFFF] & 0xFF) << 8) | (vram[(entry + 1) & 0xFFFF] & 0xFF);
-        return -(hs & 0x3FF);
+        return hs & 0x3FF;
     }
 
     private int planeWidthTiles() {

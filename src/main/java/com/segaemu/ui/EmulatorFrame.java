@@ -6,6 +6,8 @@ import com.segaemu.cartridge.Rom;
 import com.segaemu.io.Controller;
 import com.segaemu.sound.AudioMixer;
 import java.awt.BorderLayout;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
@@ -14,6 +16,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumMap;
+import java.util.Map;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -335,6 +339,16 @@ public final class EmulatorFrame extends JFrame {
     // Keyboard input
     // ------------------------------------------------------------------
 
+    // Per-button deferred-release timers. OS key auto-repeat delivers a
+    // keyReleased immediately followed by a keyPressed while a key is held; if we
+    // released the button at once, the controller would drop the input for a frame
+    // (so e.g. Sonic loses his run and slides back down a slope). Deferring the
+    // release by a few frames lets the auto-repeat's keyPressed cancel it, so a
+    // held key reads as continuously held.
+    private final Map<Controller.Button, javax.swing.Timer> pendingRelease =
+            new EnumMap<>(Controller.Button.class);
+    private static final int RELEASE_DELAY_MS = 60;
+
     private void installKeyHandling() {
         KeyAdapter adapter = new KeyAdapter() {
             @Override
@@ -347,25 +361,30 @@ public final class EmulatorFrame extends JFrame {
                     loadStateRequested = true;
                     return;
                 }
-                setButton(e, true);
+                pressButton(keyToButton(e.getKeyCode()));
             }
 
             @Override
             public void keyReleased(KeyEvent e) {
-                setButton(e, false);
+                releaseButton(keyToButton(e.getKeyCode()));
             }
         };
         addKeyListener(adapter);
         screen.addKeyListener(adapter);
+        // Losing focus must drop every held button, or a key can get stuck on.
+        FocusAdapter focus = new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                releaseAllButtons();
+            }
+        };
+        addFocusListener(focus);
+        screen.addFocusListener(focus);
         screen.requestFocusInWindow();
     }
 
-    private void setButton(KeyEvent e, boolean pressed) {
-        if (!romLoaded || genesis == null) {
-            return;
-        }
-        Controller pad = genesis.pad1();
-        Controller.Button b = switch (e.getKeyCode()) {
+    private static Controller.Button keyToButton(int keyCode) {
+        return switch (keyCode) {
             case KeyEvent.VK_UP -> Controller.Button.UP;
             case KeyEvent.VK_DOWN -> Controller.Button.DOWN;
             case KeyEvent.VK_LEFT -> Controller.Button.LEFT;
@@ -380,13 +399,49 @@ public final class EmulatorFrame extends JFrame {
             case KeyEvent.VK_ENTER -> Controller.Button.START;
             default -> null;
         };
-        if (b == null) {
+    }
+
+    private void pressButton(Controller.Button b) {
+        if (b == null || genesis == null) {
             return;
         }
-        if (pressed) {
-            pad.press(b);
-        } else {
-            pad.release(b);
+        javax.swing.Timer pending = pendingRelease.remove(b);
+        if (pending != null) {
+            pending.stop(); // a held key auto-repeated: cancel the deferred release
+        }
+        genesis.pad1().press(b);
+    }
+
+    private void releaseButton(Controller.Button b) {
+        if (b == null || genesis == null) {
+            return;
+        }
+        javax.swing.Timer existing = pendingRelease.get(b);
+        if (existing != null) {
+            existing.restart();
+            return;
+        }
+        javax.swing.Timer t = new javax.swing.Timer(RELEASE_DELAY_MS, ev -> {
+            pendingRelease.remove(b);
+            if (genesis != null) {
+                genesis.pad1().release(b);
+            }
+        });
+        t.setRepeats(false);
+        pendingRelease.put(b, t);
+        t.start();
+    }
+
+    private void releaseAllButtons() {
+        for (javax.swing.Timer t : pendingRelease.values()) {
+            t.stop();
+        }
+        pendingRelease.clear();
+        if (genesis != null) {
+            Controller pad = genesis.pad1();
+            for (Controller.Button b : Controller.Button.values()) {
+                pad.release(b);
+            }
         }
     }
 
