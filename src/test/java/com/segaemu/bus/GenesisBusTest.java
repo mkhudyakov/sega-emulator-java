@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.segaemu.cartridge.Rom;
 import com.segaemu.io.Controller;
+import com.segaemu.sound.Sn76489;
 import com.segaemu.sound.Ym2612;
 import com.segaemu.vdp.Vdp;
 import java.nio.charset.StandardCharsets;
@@ -21,7 +22,8 @@ class GenesisBusTest {
         byte[] name = "SEGA MEGA DRIVE ".getBytes(StandardCharsets.US_ASCII);
         System.arraycopy(name, 0, img, 0x100, name.length);
         Rom rom = Rom.fromBytes(img);
-        bus = new GenesisBus(rom, new Vdp(), new Controller(), new Controller(), new Ym2612());
+        bus = new GenesisBus(rom, new Vdp(), new Controller(), new Controller(),
+                new Ym2612(), new Sn76489());
     }
 
     /**

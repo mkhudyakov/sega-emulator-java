@@ -2,8 +2,10 @@ package com.segaemu.bus;
 
 import com.segaemu.cartridge.Rom;
 import com.segaemu.io.Controller;
+import com.segaemu.sound.Sn76489;
 import com.segaemu.sound.Ym2612;
 import com.segaemu.vdp.Vdp;
+import com.segaemu.z80.Z80Bus;
 
 /**
  * The Mega Drive 68000 address space. All accesses are big-endian.
@@ -23,13 +25,14 @@ import com.segaemu.vdp.Vdp;
  * <p>Word/long helpers are built on the byte path so mirroring and region
  * decoding only have to be expressed once.
  */
-public final class GenesisBus implements Bus68000 {
+public final class GenesisBus implements Bus68000, Z80Bus {
 
     private final Rom rom;
     private final Vdp vdp;
     private final Controller pad1;
     private final Controller pad2;
     private final Ym2612 ym2612;
+    private final Sn76489 psg;
 
     private final byte[] workRam = new byte[0x10000];   // $FF0000–$FFFFFF
     private final byte[] z80Ram = new byte[0x2000];      // $A00000–$A01FFF
@@ -38,12 +41,17 @@ public final class GenesisBus implements Bus68000 {
     private boolean z80BusRequested = true;
     private boolean z80Reset = true;
 
-    public GenesisBus(Rom rom, Vdp vdp, Controller pad1, Controller pad2, Ym2612 ym2612) {
+    /** 9-bit bank register selecting the Z80's $8000–$FFFF 68000 window. */
+    private int z80Bank = 0;
+
+    public GenesisBus(Rom rom, Vdp vdp, Controller pad1, Controller pad2,
+                      Ym2612 ym2612, Sn76489 psg) {
         this.rom = rom;
         this.vdp = vdp;
         this.pad1 = pad1;
         this.pad2 = pad2;
         this.ym2612 = ym2612;
+        this.psg = psg;
     }
 
     // ---- byte access (the routing happens here) ---------------------------
@@ -169,6 +177,60 @@ public final class GenesisBus implements Bus68000 {
 
     private void z80Write(int addr, int value) {
         z80Ram[addr & 0x1FFF] = (byte) value;
+    }
+
+    // ---- Z80 address space (Z80Bus) --------------------------------------
+    //
+    //   $0000–$1FFF  8 KB sound RAM   ($2000–$3FFF mirrors it)
+    //   $4000–$5FFF  YM2612 (low two address bits select the port)
+    //   $6000–$60FF  bank register (one bit shifted in per write)
+    //   $7F11        SN76489 PSG
+    //   $8000–$FFFF  32 KB window into 68000 space at (bank << 15)
+
+    @Override
+    public int read(int addr) {
+        addr &= 0xFFFF;
+        if (addr < 0x4000) {
+            return z80Ram[addr & 0x1FFF] & 0xFF;
+        }
+        if (addr < 0x6000) {
+            return ym2612.readStatus();
+        }
+        if (addr >= 0x8000) {
+            return read8(bankAddress(addr));
+        }
+        return 0xFF;
+    }
+
+    @Override
+    public void write(int addr, int value) {
+        addr &= 0xFFFF;
+        value &= 0xFF;
+        if (addr < 0x4000) {
+            z80Ram[addr & 0x1FFF] = (byte) value;
+            return;
+        }
+        if (addr < 0x6000) {
+            ym2612.writePort(addr & 0x03, value);
+            return;
+        }
+        if (addr >= 0x6000 && addr <= 0x60FF) {
+            // Bank register: each write supplies one bit (LSB), filling from the
+            // top, so nine writes build the 9-bit bank number.
+            z80Bank = ((z80Bank >> 1) | ((value & 1) << 8)) & 0x1FF;
+            return;
+        }
+        if (addr == 0x7F11) {
+            psg.write(value);
+            return;
+        }
+        if (addr >= 0x8000) {
+            write8(bankAddress(addr), value);
+        }
+    }
+
+    private int bankAddress(int z80Addr) {
+        return ((z80Bank << 15) | (z80Addr & 0x7FFF)) & 0xFFFFFF;
     }
 
     private int ioRead(int addr) {

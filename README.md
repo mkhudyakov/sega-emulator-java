@@ -47,6 +47,12 @@ features listed below. Here is exactly what works and what does not:
   (linked-list traversal, 1–4 cell sizes, H/V flip, palettes, per-pixel priority
   resolution, sprite overflow/collision flags, basic X=0 masking).
 - **Controller** — the 3-button pad's TH-multiplexed read protocol.
+- **Z80 sound CPU** — a full Zilog Z80 core (main + CB/ED/DD/FD/DDCB/FDCB tables,
+  the S Z Y H X P/V N C flags, IX/IY, shadow registers, I/R, the three interrupt
+  modes and NMI), wired to the Z80 memory map (8 KB sound RAM, YM2612/PSG ports,
+  the $6000 bank register and the $8000–$FFFF 68000 window). It runs the sound
+  driver the 68000 uploads — under *Sonic* the Z80 comes out of reset, sets up its
+  own stack and executes driver code each frame.
 - **YM2612** — register/status ports (status reads as not-busy so the busy-wait
   loops games run after the SEGA logo terminate). Audio synthesis is still a stub.
 - **Swing UI** — 320×224 display with aspect-correct scaling, ROM-info dialog,
@@ -58,9 +64,9 @@ features listed below. Here is exactly what works and what does not:
   YM2612 status).
 
 ### 🚧 Not yet implemented (the roadmap — see `PLAN.md`)
-- **The Z80 core** (stubbed: only the bus-request/reset handshake is modelled).
-- **Sound**: the YM2612 FM chip and SN76489 PSG accept register writes but
-  produce silence.
+- **Sound output**: the Z80 driver programs the chips, but the YM2612 FM and
+  SN76489 PSG still synthesize **silence** (register writes are latched only), and
+  there is no audio output/mixing yet.
 - **VDP interlace** modes and **sub-line timing** (the H-interrupt itself is
   implemented; the HV counter's horizontal position and exact HBLANK timing are
   still per-scanline). Shadow/highlight is an approximation.

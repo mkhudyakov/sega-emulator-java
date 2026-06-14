@@ -25,9 +25,12 @@ public final class GenesisSystem {
 
     /** Master 68000 clock (NTSC), Hz. */
     public static final double CPU_CLOCK = 7_670_454.0;
+    /** Z80 clock (NTSC), Hz — the master crystal / 15. */
+    public static final double Z80_CLOCK = 3_579_545.0;
     public static final double FPS = 59.92;
     private static final int SCANLINES = 262;
     private static final int CYCLES_PER_LINE = (int) Math.round(CPU_CLOCK / FPS / SCANLINES);
+    private static final int Z80_CYCLES_PER_LINE = (int) Math.round(Z80_CLOCK / FPS / SCANLINES);
 
     // VDP interrupt levels and autovector numbers on the Mega Drive. The 68000
     // autovector for level N is 24+N (so level 6 → 30 → $78, level 4 → 28 → $70).
@@ -60,6 +63,9 @@ public final class GenesisSystem {
     private InstructionHook instructionHook;
     private volatile boolean breakRequested;
 
+    /** Tracks the Z80 reset line so its falling edge re-resets the Z80 core. */
+    private boolean z80WasReset = true;
+
     public GenesisSystem(Rom rom) {
         this.rom = rom;
         this.vdp = new Vdp();
@@ -68,7 +74,8 @@ public final class GenesisSystem {
         this.z80 = new Z80();
         this.ym2612 = new Ym2612();
         this.psg = new Sn76489();
-        this.bus = new GenesisBus(rom, vdp, pad1, pad2, ym2612);
+        this.bus = new GenesisBus(rom, vdp, pad1, pad2, ym2612, psg);
+        this.z80.attachBus(bus);
         this.cpu = new M68000(bus);
         reset();
     }
@@ -79,6 +86,7 @@ public final class GenesisSystem {
         ym2612.reset();
         psg.reset();
         cpu.reset();
+        z80WasReset = true;
     }
 
     /**
@@ -98,9 +106,22 @@ public final class GenesisSystem {
                 }
                 budget += cpu.step();
             }
-            // Step the Z80 for a comparable slice (currently inert).
-            if (!bus.isZ80Reset() && !bus.isZ80BusRequested()) {
-                z80.run(CYCLES_PER_LINE);
+            // The Z80 INT line is tied to the VDP vertical interrupt: it pulses
+            // at the start of vblank, independent of the 68000's interrupt enable.
+            if (line == Vdp.SCREEN_H) {
+                z80.requestInterrupt();
+            } else if (line == Vdp.SCREEN_H + 1) {
+                z80.clearInterrupt();
+            }
+            // Run the Z80 when it is out of reset and holds its own bus. Its reset
+            // line's falling edge resets the core (PC→0) before it first runs.
+            boolean inReset = bus.isZ80Reset();
+            if (z80WasReset && !inReset) {
+                z80.reset();
+            }
+            z80WasReset = inReset;
+            if (!inReset && !bus.isZ80BusRequested()) {
+                z80.run(Z80_CYCLES_PER_LINE);
             }
             boolean frameDone = vdp.stepScanline();
             // Deliver the vertical interrupt (higher priority) first, then the

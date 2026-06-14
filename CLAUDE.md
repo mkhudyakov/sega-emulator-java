@@ -28,9 +28,11 @@ Requires **JDK 21+**.
 This is a **working foundation, not a complete emulator** (see README for the
 full breakdown). It boots commercial ROMs and renders their title screens with
 background planes **and sprites** (Sonic appears on his title emblem) via VDP
-DMA. The Z80 core and sound are deliberately stubbed roadmap items. **`PLAN.md`
-is the phased development roadmap — follow it one phase at a time and keep it,
-the README, and class javadocs honest after each phase.**
+DMA. The **Z80 sound CPU is a full core** that runs the uploaded sound driver,
+but the YM2612/PSG synthesis (and audio output) are still stubbed roadmap items —
+the chips latch register writes and emit silence. **`PLAN.md` is the phased
+development roadmap — follow it one phase at a time and keep it, the README, and
+class javadocs honest after each phase.**
 
 ## Architecture
 
@@ -81,6 +83,18 @@ copy) is driven from `GenesisBus.runPendingDma()`. The **window plane**
 **shadow/highlight** (register 12 bit 3, approximate), and **H40/H32** width
 (register 12 → `activeWidth()` 320/256) are implemented. **Interlace and
 sub-line HV timing are not yet implemented.**
+
+**Z80** (`z80/Z80.java`): a full Zilog Z80 core — the main table plus the CB, ED,
+DD/FD and DDCB/FDCB prefix groups, the S-Z-Y-H-X-P/V-N-C flags (with the
+undocumented 5/3 bits), IX/IY, the shadow set, I/R, the three interrupt modes and
+NMI. It talks to memory through the `z80/Z80Bus` interface, which `GenesisBus`
+implements (`read`/`write`): `$0000–$3FFF` sound RAM (8 KB mirrored), `$4000–$5FFF`
+YM2612, `$6000` the 9-bit bank register (one bit shifted in per write), `$7F11`
+the PSG, and `$8000–$FFFF` the 68000 window at `(bank << 15)`. `GenesisSystem`
+runs it at `Z80_CYCLES_PER_LINE` only while it is out of reset and holds its own
+bus; the reset line's falling edge re-resets the core (PC→0), and the Z80 INT line
+is pulsed at vblank (`requestInterrupt`/`clearInterrupt`), independent of the
+68000's interrupt enable.
 
 **Debug harness** (`debug/Debugger.java`): headless run-frames / PC-breakpoint /
 RAM-peek / screenshot tool used to diagnose boot bugs; also exposed via
