@@ -301,6 +301,44 @@ class M68000Test {
     }
 
     @Test
+    void rotateLeavesExtendFlagUnchanged() {
+        // ROL/ROR must not touch X (only ASL/ASR/LSL/LSR do). Verified against the
+        // SingleStepTests m68000 vectors.
+        cpu.pokeD(0, 0x01);
+        cpu.setSrFlags(true, false, false, false, false); // X = 1
+        bus.poke(0x1000, 0xE318);          // ROL.b #1,D0
+        cpu.step();
+        assertEquals(0x02, cpu.getD(0));
+        assertTrue(cpu.xx(), "ROL leaves X unchanged");
+        assertFalse(cpu.cc(), "C = bit rotated out (bit7 of $01 was 0)");
+    }
+
+    @Test
+    void addLongComputesCarryUnsigned() {
+        cpu.pokeD(0, 0xFFFFFFFF);
+        bus.poke(0x1000, 0x0680, 0x0000, 0x0001); // ADDI.L #1,D0
+        cpu.step();
+        assertEquals(0, cpu.getD(0));
+        assertTrue(cpu.cc(), "32-bit add wraps -> carry set");
+        assertTrue(cpu.zz());
+
+        cpu.pokeD(1, 0x10);
+        bus.poke(0x1006, 0x0681, 0x0000, 0x0001); // ADDI.L #1,D1
+        cpu.setPc(0x1006);
+        cpu.step();
+        assertEquals(0x11, cpu.getD(1));
+        assertFalse(cpu.cc(), "no wrap -> carry clear");
+    }
+
+    @Test
+    void leaKeepsFull32BitAddress() {
+        // LEA stores the full 32-bit effective address, not masked to 24 bits.
+        bus.poke(0x1000, 0x41F9, 0x1234, 0x5678); // LEA ($12345678).L,A0
+        cpu.step();
+        assertEquals(0x12345678, cpu.getA(0));
+    }
+
+    @Test
     void subaLongFromDataRegisterIsNotSubx() {
         cpu.pokeD(2, 0x00000010);
         cpu.pokeA(1, 0x00001000);

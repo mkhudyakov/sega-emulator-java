@@ -1244,30 +1244,33 @@ public final class M68000 {
         switch (mode) {
             case 0: return new Ea(0, reg, 0, 0, size);                 // Dn
             case 1: return new Ea(1, reg, 0, 0, size);                 // An
-            case 2: return new Ea(2, 0, a[reg] & 0xFFFFFF, 0, size);   // (An)
+            // Effective addresses are kept full 32-bit: the 68000 stores all 32
+            // bits in address registers (LEA/PEA/MOVEM), and the external bus masks
+            // to 24 bits only on the actual memory access.
+            case 2: return new Ea(2, 0, a[reg], 0, size);             // (An)
             case 3: {                                                   // (An)+
-                int addr = a[reg] & 0xFFFFFF;
-                a[reg] = (a[reg] + operandStep(reg, size)) & 0xFFFFFFFF;
+                int addr = a[reg];
+                a[reg] = a[reg] + operandStep(reg, size);
                 return new Ea(2, 0, addr, 0, size);
             }
             case 4: {                                                   // -(An)
-                a[reg] = (a[reg] - operandStep(reg, size)) & 0xFFFFFFFF;
-                return new Ea(2, 0, a[reg] & 0xFFFFFF, 0, size);
+                a[reg] = a[reg] - operandStep(reg, size);
+                return new Ea(2, 0, a[reg], 0, size);
             }
             case 5: {                                                   // (d16,An)
                 int disp = signExtend(fetch16(), WORD);
-                return new Ea(2, 0, (a[reg] + disp) & 0xFFFFFF, 0, size);
+                return new Ea(2, 0, a[reg] + disp, 0, size);
             }
             case 6:                                                     // (d8,An,Xn)
                 return new Ea(2, 0, indexed(a[reg]), 0, size);
             case 7:
                 switch (reg) {
-                    case 0: return new Ea(2, 0, signExtend(fetch16(), WORD) & 0xFFFFFF, 0, size); // (xxx).W
-                    case 1: return new Ea(2, 0, fetch32() & 0xFFFFFF, 0, size);                   // (xxx).L
+                    case 0: return new Ea(2, 0, signExtend(fetch16(), WORD), 0, size); // (xxx).W
+                    case 1: return new Ea(2, 0, fetch32(), 0, size);                   // (xxx).L
                     case 2: {                                                                      // (d16,PC)
                         int base = pc;
                         int disp = signExtend(fetch16(), WORD);
-                        return new Ea(2, 0, (base + disp) & 0xFFFFFF, 0, size);
+                        return new Ea(2, 0, base + disp, 0, size);
                     }
                     case 3: {                                                                      // (d8,PC,Xn)
                         int base = pc;
@@ -1293,7 +1296,7 @@ public final class M68000 {
         if (!longIndex) {
             idx = signExtend(idx & 0xFFFF, WORD);
         }
-        return (base + disp + idx) & 0xFFFFFF;
+        return base + disp + idx; // full 32-bit; the bus masks on access
     }
 
     private int operandStep(int reg, int size) {
