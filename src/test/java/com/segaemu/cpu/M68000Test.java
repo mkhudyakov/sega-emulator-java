@@ -331,6 +331,40 @@ class M68000Test {
     }
 
     @Test
+    void addxByteCarryAndOverflow() {
+        // ADDX folds in the X carry; the V/carry must be computed from all three
+        // operands (folding src+x into one value mis-flagged the overflow cases).
+        cpu.pokeD(0, 0x7F);
+        cpu.pokeD(1, 0x00);
+        cpu.setSrFlags(true, false, false, false, false); // X = 1
+        bus.poke(0x1000, 0xD101);          // ADDX.b D1,D0
+        cpu.step();
+        assertEquals(0x80, cpu.getD(0) & 0xFF);
+        assertTrue(cpu.vv(), "$7F + X overflows the signed byte");
+        assertFalse(cpu.cc(), "no unsigned carry");
+    }
+
+    @Test
+    void negxByteBorrowAndZeroRule() {
+        cpu.pokeD(0, 0x00);
+        cpu.setSrFlags(true, false, true, false, false); // X = 1, Z = 1
+        bus.poke(0x1000, 0x4000);          // NEGX.b D0
+        cpu.step();
+        assertEquals(0xFF, cpu.getD(0) & 0xFF);
+        assertTrue(cpu.cc(), "0 - X borrows");
+        assertFalse(cpu.zz(), "Z only clears (result is non-zero)");
+    }
+
+    @Test
+    void moveFromSrIncludesSupervisorAndTraceBits() {
+        bus.poke(0x1000, 0x46FC, 0xA700);  // MOVE #$A700,SR (T=1, S=1, I=7)
+        cpu.step();
+        bus.poke(0x1004, 0x40C0);          // MOVE SR,D0
+        cpu.step();
+        assertEquals(0xA700, cpu.getD(0) & 0xFFFF, "SR read-back keeps T and S");
+    }
+
+    @Test
     void leaKeepsFull32BitAddress() {
         // LEA stores the full 32-bit effective address, not masked to 24 bits.
         bus.poke(0x1000, 0x41F9, 0x1234, 0x5678); // LEA ($12345678).L,A0

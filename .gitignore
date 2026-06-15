@@ -2,11 +2,13 @@ out/
 build/
 .gradle/
 *.class
-# ROMs are never committed — supply your own.
+# Mega Drive ROMs use the .md extension, so ignore *.md — but keep the
+# project's own markdown docs (they are not ROMs).
 *.md
 !README.md
 !CLAUDE.md
 !TUTORIAL.md
+!PLAN.md
 *.bin
 *.gen
 *.smd

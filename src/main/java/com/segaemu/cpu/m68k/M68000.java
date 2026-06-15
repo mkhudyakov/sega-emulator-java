@@ -44,6 +44,7 @@ public final class M68000 {
     // --- status register ---------------------------------------------------
     private boolean flagC, flagV, flagZ, flagN, flagX;
     private boolean supervisor = true;
+    private boolean traceFlag = false; // SR bit 15 (T); stored but tracing not done
     private int interruptMask = 7;
     private boolean stopped = false;
 
@@ -454,9 +455,17 @@ public final class M68000 {
         int reg = (op >> 9) & 7;
         int bound = signExtend(decode((op >> 3) & 7, op & 7, WORD).read(), WORD);
         int value = signExtend(d[reg] & 0xFFFF, WORD);
-        if (value < 0 || value > bound) {
-            exception(6);
+        // Flags: V/C cleared, Z set from the value (undocumented but matched by
+        // MAME), N cleared when in range else set from the value's sign.
+        flagZ = value == 0;
+        flagV = false;
+        flagC = false;
+        if (value >= 0 && value <= bound) {
+            flagN = false;
+            return;
         }
+        flagN = value < 0;
+        exception(6);
     }
 
     private void clr(int size, int mode, int reg) {
@@ -500,8 +509,15 @@ public final class M68000 {
         Ea ea = decode(mode, reg, size);
         int v = ea.read();
         int x = flagX ? 1 : 0;
-        int r = (0 - v - x) & mask(size);
-        setSubFlags(0, v, r, size);
+        int m = signBit(size);
+        boolean prevZ = flagZ;
+        long diff = 0L - (v & maskLong(size)) - x;
+        int r = (int) (diff & mask(size));
+        boolean sb = (v & m) != 0, sr = (r & m) != 0;
+        flagV = sb && sr;       // overflow vs 0: source and result both negative
+        flagN = sr;
+        flagC = diff < 0;       // borrow
+        flagZ = prevZ && r == 0; // X-form: Z is only cleared
         flagX = flagC;
         ea.write(r);
     }
@@ -562,43 +578,52 @@ public final class M68000 {
         }
     }
 
+    // ABCD/SBCD flag behaviour follows MAME's microcoded core: the "undefined"
+    // N and V flags are computed from the binary result before and after the
+    // decimal correction (V = ~initial & final, bit 7).
     private int abcdByte(int dst, int src) {
-        int res = (src & 0x0F) + (dst & 0x0F) + (flagX ? 1 : 0);
-        if (res > 9) {
-            res += 6;
+        int r = (src & 0x0F) + (dst & 0x0F) + (flagX ? 1 : 0);
+        int v = ~r;
+        if (r > 9) {
+            r += 6;
         }
-        res += (src & 0xF0) + (dst & 0xF0);
-        boolean carry = res > 0x99;
+        r += (src & 0xF0) + (dst & 0xF0);
+        boolean carry = r > 0x99;
         if (carry) {
-            res -= 0xA0;
+            r -= 0xA0;
         }
+        v &= r;
+        flagV = (v & 0x80) != 0;
+        flagN = (r & 0x80) != 0;
         flagC = carry;
         flagX = carry;
-        res &= 0xFF;
+        int res = r & 0xFF;
         if (res != 0) {
             flagZ = false; // Z is only cleared, never set, by BCD ops
         }
-        flagN = (res & 0x80) != 0;
         return res;
     }
 
     private int sbcdByte(int dst, int src) {
-        int res = (dst & 0x0F) - (src & 0x0F) - (flagX ? 1 : 0);
-        if (res < 0) {
-            res -= 6;
+        int r = (dst & 0x0F) - (src & 0x0F) - (flagX ? 1 : 0);
+        int v = ~r;
+        if (Integer.compareUnsigned(r, 9) > 0) { // unsigned: a borrow wraps to >9
+            r -= 6;
         }
-        res += (dst & 0xF0) - (src & 0xF0);
-        boolean carry = res < 0;
+        r += (dst & 0xF0) - (src & 0xF0);
+        boolean carry = Integer.compareUnsigned(r, 0x99) > 0;
         if (carry) {
-            res += 0xA0;
+            r += 0xA0;
         }
+        v &= r;
+        flagV = (v & 0x80) != 0;
+        flagN = (r & 0x80) != 0;
         flagC = carry;
         flagX = carry;
-        res &= 0xFF;
+        int res = r & 0xFF;
         if (res != 0) {
             flagZ = false;
         }
-        flagN = (res & 0x80) != 0;
         return res;
     }
 
@@ -622,13 +647,24 @@ public final class M68000 {
         }
         int x = flagX ? 1 : 0;
         boolean prevZ = flagZ;
+        int m = signBit(size);
         int r;
+        // Compute the carry/overflow from the three operands directly — folding
+        // (src + x) into one value mis-flags the cases where it overflows.
         if (subtract) {
-            r = (dst - src - x) & mask(size);
-            setSubFlags(dst, src + x, r, size);
+            long diff = (dst & maskLong(size)) - (src & maskLong(size)) - x;
+            r = (int) (diff & mask(size));
+            boolean sa = (dst & m) != 0, sb = (src & m) != 0, sr = (r & m) != 0;
+            flagV = (sa != sb) && (sr != sa);
+            flagN = sr;
+            flagC = diff < 0;
         } else {
-            r = (dst + src + x) & mask(size);
-            setAddFlags(dst, src + x, r, size);
+            long sum = (dst & maskLong(size)) + (src & maskLong(size)) + x;
+            r = (int) (sum & mask(size));
+            boolean sa = (dst & m) != 0, sb = (src & m) != 0, sr = (r & m) != 0;
+            flagV = (sa == sb) && (sr != sa);
+            flagN = sr;
+            flagC = sum > maskLong(size);
         }
         // X-form: Z is only cleared when the result is non-zero.
         flagZ = prevZ && r == 0;
@@ -1452,11 +1488,13 @@ public final class M68000 {
         int sr = packCcr();
         sr |= (interruptMask & 7) << 8;
         if (supervisor) sr |= 0x2000;
+        if (traceFlag) sr |= 0x8000;
         return sr;
     }
 
     private void unpackSr(int v) {
         unpackCcr(v & 0xFF);
+        traceFlag = (v & 0x8000) != 0;
         interruptMask = (v >> 8) & 7;
         boolean wantSupervisor = (v & 0x2000) != 0;
         if (wantSupervisor != supervisor) {
@@ -1525,6 +1563,7 @@ public final class M68000 {
         unpackCcr(sr & 0xFF);
         interruptMask = (sr >> 8) & 7;
         supervisor = (sr & 0x2000) != 0;
+        traceFlag = (sr & 0x8000) != 0;
         this.usp = usp;
         this.ssp = ssp;
         a[7] = supervisor ? ssp : usp;
